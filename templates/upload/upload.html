@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block title %}Upload - Corail{% endblock %}
+
+{% block content %}
+<div class="card wide">
+    <h1>Upload Your Dive Photo</h1>
+    
+    {% if success %}
+    <div class="success">{{ success }}</div>
+    {% endif %}
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
+    <form method="post" enctype="multipart/form-data" action="/upload/">
+        {% csrf_token %}
+        <div>
+            <label for="image">Select Image</label>
+            <input type="file" id="image" name="image" accept="image/*" required onchange="previewImage(this)">
+            <img id="imagePreview" class="image-preview" alt="Preview">
+        </div>
+        <div>
+            <label for="description">Description</label>
+            <textarea id="description" name="description" rows="3" placeholder="Tell us about this dive..."></textarea>
+        </div>
+        <div>
+            <label for="diving_site">Diving Site</label>
+            <input type="text" id="diving_site" name="diving_site" placeholder="e.g., Blue Hole, Great Barrier Reef">
+        </div>
+        <button type="submit">Upload Photo</button>
+    </form>
+    
+    {% if images %}
+    <h3 style="margin-top: 2rem; color: #555;">Your Uploads</h3>
+    <div class="image-grid">
+        {% for img in images %}
+        <div class="image-card">
+            <img src="{{ img.image.url }}" alt="{{ img.description }}">
+            <div class="info">
+                <div class="date">{{ img.uploaded_at|date:"M d, Y" }}</div>
+                {% if img.diving_site %}
+                <div class="description">📍 {{ img.diving_site }}</div>
+                {% endif %}
+                {% if img.description %}
+                <div class="description">{{ img.description }}</div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

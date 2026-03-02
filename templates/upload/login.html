@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block title %}Login - Corail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Welcome Back</h1>
+    <p class="subtitle">Sign in to continue</p>
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
+    <form method="post" action="/login/">
+        {% csrf_token %}
+        <div>
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required>
+        </div>
+        <div>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <button type="submit">Sign In</button>
+    </form>
+    
+    <p class="switch-link">
+        Don't have an account? <a href="/register/">Create one</a>
+    </p>
+</div>
+{% endblock %}
