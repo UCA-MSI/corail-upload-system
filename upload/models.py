@@ -6,6 +6,7 @@ class UploadImageModel(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploaded_images')
     image = models.ImageField(upload_to='images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    diving_date = models.DateField(null=True, blank=True)
     description = models.TextField(blank=True)
     diving_site = models.CharField(max_length=255, blank=True)
 

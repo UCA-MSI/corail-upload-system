@@ -62,22 +62,26 @@ def upload_view(request):
     success = None
     
     if request.method == 'POST':
-        image = request.FILES.get('image')
+        images = request.FILES.getlist('images')
         description = request.POST.get('description', '')
         diving_site = request.POST.get('diving_site', '')
+        diving_date = request.POST.get('diving_date', '')
         
-        if image:
-            UploadImageModel.objects.create(
-                user=request.user,
-                image=image,
-                description=description,
-                diving_site=diving_site
-            )
-            success = 'Image uploaded successfully!'
+        if images:
+            for image in images:
+                UploadImageModel.objects.create(
+                    user=request.user,
+                    image=image,
+                    description=description,
+                    diving_site=diving_site,
+                    diving_date=diving_date or None
+                )
+            count = len(images)
+            success = f'{count} image{"s" if count > 1 else ""} uploaded successfully!'
         else:
-            error = 'Please select an image'
+            error = 'Please select at least one image'
     
-    images = UploadImageModel.objects.filter(user=request.user).order_by('-uploaded_at')
+    images = UploadImageModel.objects.filter(user=request.user).order_by('-diving_date', '-uploaded_at')
     return render(request, 'upload/upload.html', {
         'error': error,
         'success': success,
