@@ -67,7 +67,7 @@ def register_view(request):
             
             # In production, send email here
             # For now, show the link in the response
-            from .tokens import generate_activation_link
+
             activation_link = request.build_absolute_uri(f'/activate/{user.id}/{user.userregistration.token}/')
             
             success = f'Registration request submitted! An email has been sent to {email}.'
