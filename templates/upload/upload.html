@@ -4,8 +4,7 @@
 
 {% block content %}
 <div class="card wide">
-    <h1>Upload Your Dive Photos</h1>
-    <p class="subtitle">Share your underwater adventures</p>
+    <h1>Upload Pictures</h1>
     
     {% if success %}
     <div class="success">{{ success }}</div>
@@ -32,7 +31,7 @@
         </div>
         <div>
             <label for="description">Description</label>
-            <textarea id="description" name="description" rows="3" placeholder="Tell us about this dive..."></textarea>
+            <textarea id="description" name="description" rows="3" placeholder="Any additional info..."></textarea>
         </div>
         <button type="submit">Upload Photos</button>
     </form>
