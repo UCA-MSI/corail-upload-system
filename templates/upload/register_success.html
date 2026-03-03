@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block title %}Registration Requested - Corail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Check Your Email</h1>
+    <p class="subtitle">We've sent activation instructions to <strong>{{ email }}</strong></p>
+    
+    {% if success %}
+    <div class="success">{{ success }}</div>
+    {% endif %}
+    
+    <div style="background: #f8f8f8; padding: 1rem; border-radius: 8px; margin-top: 1rem; font-size: 0.9rem;">
+        <p><strong>Demo Mode:</strong> In production, an email would be sent with the activation link.</p>
+        <p style="margin-top: 0.5rem;">Your activation link:</p>
+        <code style="word-break: break-all; color: #667eea;">{{ activation_link }}</code>
+    </div>
+    
+    <p class="switch-link">
+        <a href="/login/">Back to Login</a>
+    </p>
+</div>
+{% endblock %}

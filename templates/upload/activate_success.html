@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}Account Activated - Corail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>🎉 Account Activated!</h1>
+    <p class="subtitle">Your account is now active</p>
+    
+    {% if success %}
+    <div class="success">{{ success }}</div>
+    {% endif %}
+    
+    <a href="/login/">
+        <button style="width: 100%;">Go to Login</button>
+    </a>
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}Activate Account - Corail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Set Your Password</h1>
+    <p class="subtitle">Create a secure password for your account</p>
+    
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+    
+    <form method="post" action="">
+        {% csrf_token %}
+        <div>
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+        </div>
+        <div>
+            <label for="confirm_password">Confirm Password</label>
+            <input type="password" id="confirm_password" name="confirm_password" required>
+        </div>
+        <button type="submit">Activate Account</button>
+    </form>
+</div>
+{% endblock %}

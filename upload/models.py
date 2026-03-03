@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+import uuid
 
 
 class UploadImageModel(models.Model):
@@ -12,3 +13,15 @@ class UploadImageModel(models.Model):
 
     def __str__(self):
         return f"Image {self.id} uploaded at {self.uploaded_at}"
+
+
+class UserRegistration(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    email = models.EmailField()
+    temp_password = models.CharField(max_length=128)
+    token = models.UUIDField(default=uuid.uuid4, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Registration for {self.user.username}"
