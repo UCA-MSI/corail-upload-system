@@ -5,22 +5,48 @@
 {% block content %}
 <div class="card wide">
     <h1>Upload Pictures</h1>
-    
-    {% if success %}
-    <div class="success">{{ success }}</div>
-    {% endif %}
-    
+
+    {% for message in messages %}
+    <div class="{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+
     {% if error %}
     <div class="error">{{ error }}</div>
     {% endif %}
-    
-    <form method="post" enctype="multipart/form-data" action="/upload/">
+
+    <form method="post" enctype="multipart/form-data" action="/upload/" id="uploadForm">
         {% csrf_token %}
-        <div>
-            <label for="images">Select Images (multiple allowed)</label>
-            <input type="file" id="images" name="images" accept="image/*" multiple onchange="previewMultipleImages(this)">
-            <div id="imagePreviews" class="image-grid" style="margin-top: 1rem;"></div>
+
+        <div id="dropZone" class="drop-zone">
+            <div class="drop-zone-icon">📁</div>
+            <p class="drop-zone-text">Drag and drop folders here</p>
+            <label for="folderInput" class="btn-secondary">Browse Folder</label>
+            <input type="file" id="folderInput" webkitdirectory multiple style="display:none"
+                   onchange="addFiles(this.files)">
         </div>
+
+        <div class="separator">
+            <span>or add individual files</span>
+        </div>
+
+        <div class="individual-file-row">
+            <label for="individualInput" class="btn-secondary">Choose Files</label>
+            <input type="file" id="individualInput" accept="image/*" multiple style="display:none"
+                   onchange="addFiles(this.files)">
+            <span id="individualFileName" class="file-name-display">No file chosen</span>
+        </div>
+
+        <!-- Hidden input that carries all aggregated files to the server -->
+        <input type="file" id="mainFileInput" name="images" multiple style="display:none">
+
+        <div id="fileList" style="display:none;">
+            <div class="file-list-header">
+                <span>Selected: <strong id="fileCount">0</strong> file(s)</span>
+                <button type="button" class="btn-danger-small" onclick="clearFiles()">Clear all</button>
+            </div>
+            <div id="imagePreviews" class="image-grid"></div>
+        </div>
+
         <div>
             <label for="diving_date">Diving Date</label>
             <input type="date" id="diving_date" name="diving_date">
@@ -35,13 +61,17 @@
         </div>
         <button type="submit">Upload Photos</button>
     </form>
-    
+
     {% if images %}
     <h3 style="margin-top: 2rem; color: #555;">Your Uploads</h3>
     <div class="image-grid">
         {% for img in images %}
-        <div class="image-card">
-            <img src="{{ img.image.url }}" alt="{{ img.description }}">
+        <div class="image-card" style="position:relative;">
+            <img src="{{ img.image.url }}" alt="{{ img.description|default:'' }}">
+            <form method="post" action="/upload/delete/{{ img.id }}/" style="position:absolute;top:4px;right:4px;margin:0;">
+                {% csrf_token %}
+                <button type="submit" class="remove-btn" title="Delete">×</button>
+            </form>
             <div class="info">
                 {% if img.diving_date %}
                 <div class="date">📅 {{ img.diving_date }}</div>
@@ -59,24 +89,268 @@
     {% endif %}
 </div>
 
+<style>
+    .drop-zone {
+        border: 2px dashed #667eea;
+        border-radius: 10px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: background 0.2s, border-color 0.2s;
+        background: #f8f8ff;
+    }
+    .drop-zone.drag-over {
+        background: #eef0ff;
+        border-color: #764ba2;
+    }
+    .drop-zone-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .drop-zone-text {
+        color: #666;
+        margin-bottom: 1rem;
+    }
+    .btn-secondary {
+        display: inline-block;
+        background: white;
+        color: #667eea;
+        border: 2px solid #667eea;
+        padding: 0.5rem 1.25rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    .btn-secondary:hover {
+        background: #eef0ff;
+    }
+    .separator {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: #aaa;
+        font-size: 0.85rem;
+    }
+    .separator::before, .separator::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: #e0e0e0;
+    }
+    .individual-file-row {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    .file-name-display {
+        color: #888;
+        font-size: 0.9rem;
+    }
+    .file-list-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+        color: #555;
+    }
+    .btn-danger-small {
+        background: none;
+        color: #c33;
+        border: 1px solid #c33;
+        padding: 0.25rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+        margin: 0;
+        transition: background 0.2s;
+    }
+    .btn-danger-small:hover {
+        background: #fee;
+    }
+    .preview-card {
+        position: relative;
+        background: #f8f8f8;
+        border-radius: 10px;
+        overflow: hidden;
+        max-width: 150px;
+    }
+    .preview-card img {
+        width: 100%;
+        height: 120px;
+        object-fit: cover;
+        display: block;
+    }
+    .preview-card .remove-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        background: rgba(0,0,0,0.55);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        font-size: 0.75rem;
+        line-height: 22px;
+        text-align: center;
+        cursor: pointer;
+        padding: 0;
+        margin: 0;
+    }
+    .preview-card .file-label {
+        padding: 0.35rem 0.5rem;
+        font-size: 0.75rem;
+        color: #555;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
+
 <script>
-    function previewMultipleImages(input) {
-        const container = document.getElementById('imagePreviews');
-        container.innerHTML = '';
-        
-        if (input.files) {
-            Array.from(input.files).forEach(file => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const div = document.createElement('div');
-                    div.className = 'image-card';
-                    div.style.maxWidth = '150px';
-                    div.innerHTML = '<img src="' + e.target.result + '" alt="' + file.name + '">';
-                    container.appendChild(div);
-                }
-                reader.readAsDataURL(file);
-            });
+    let allFiles = [];
+
+    // --- File accumulation ---
+
+    function addFiles(fileList) {
+        let added = 0;
+        for (const file of fileList) {
+            if (!file.type.startsWith('image/')) continue;
+            const isDupe = allFiles.some(f => f.name === file.name && f.size === file.size);
+            if (!isDupe) {
+                allFiles.push(file);
+                added++;
+            }
+        }
+        if (added > 0) {
+            syncMainInput();
+            renderPreviews();
         }
     }
+
+    function removeFile(index) {
+        allFiles.splice(index, 1);
+        syncMainInput();
+        renderPreviews();
+    }
+
+    function clearFiles() {
+        allFiles = [];
+        syncMainInput();
+        renderPreviews();
+        document.getElementById('individualFileName').textContent = 'No file chosen';
+    }
+
+    function syncMainInput() {
+        const dt = new DataTransfer();
+        for (const file of allFiles) dt.items.add(file);
+        document.getElementById('mainFileInput').files = dt.files;
+        document.getElementById('fileCount').textContent = allFiles.length;
+        document.getElementById('fileList').style.display = allFiles.length ? 'block' : 'none';
+    }
+
+    // --- Preview rendering (no innerHTML with user data to prevent XSS) ---
+
+    function renderPreviews() {
+        const container = document.getElementById('imagePreviews');
+        container.innerHTML = '';
+
+        allFiles.forEach((file, index) => {
+            const card = document.createElement('div');
+            card.className = 'preview-card';
+
+            const img = document.createElement('img');
+            img.alt = '';
+
+            const label = document.createElement('div');
+            label.className = 'file-label';
+            label.textContent = file.name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'remove-btn';
+            removeBtn.textContent = '×';
+            removeBtn.addEventListener('click', () => removeFile(index));
+
+            card.appendChild(img);
+            card.appendChild(removeBtn);
+            card.appendChild(label);
+            container.appendChild(card);
+
+            const reader = new FileReader();
+            reader.onload = (e) => { img.src = e.target.result; };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // --- Drag and drop zone ---
+
+    const dropZone = document.getElementById('dropZone');
+
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const items = e.dataTransfer.items;
+        if (!items) return;
+
+        const collected = [];
+        const entries = Array.from(items)
+            .map(item => item.webkitGetAsEntry && item.webkitGetAsEntry())
+            .filter(Boolean);
+
+        await Promise.all(entries.map(entry => collectEntry(entry, collected)));
+        addFiles(collected);
+    });
+
+    async function collectEntry(entry, out) {
+        if (entry.isFile) {
+            await new Promise(resolve => entry.file(file => {
+                if (file.type.startsWith('image/')) out.push(file);
+                resolve();
+            }));
+        } else if (entry.isDirectory) {
+            await readAllEntries(entry.createReader(), out);
+        }
+    }
+
+    async function readAllEntries(reader, out) {
+        // readEntries returns at most 100 items per call; loop until empty
+        while (true) {
+            const batch = await new Promise((resolve, reject) =>
+                reader.readEntries(resolve, reject)
+            );
+            if (!batch.length) break;
+            await Promise.all(batch.map(entry => collectEntry(entry, out)));
+        }
+    }
+
+    // --- Individual file input label update ---
+
+    document.getElementById('individualInput').addEventListener('change', function () {
+        const count = this.files.length;
+        document.getElementById('individualFileName').textContent =
+            count ? `${count} file${count > 1 ? 's' : ''} chosen` : 'No file chosen';
+    });
+
+    // --- Guard: ensure mainFileInput is populated before submit ---
+
+    document.getElementById('uploadForm').addEventListener('submit', function (e) {
+        if (allFiles.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one image.');
+        }
+    });
 </script>
 {% endblock %}

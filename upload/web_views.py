@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 from django.utils import timezone
 from datetime import timedelta
+from django.db import models
 import secrets
 import string
 from .models import UploadImageModel, UserRegistration
@@ -117,6 +118,18 @@ def activate_view(request, user_id, token):
     return render(request, 'upload/activate.html', {'error': error})
 
 
+@login_required(login_url='/login/')
+def delete_image_view(request, image_id):
+    if request.method == 'POST':
+        try:
+            image = UploadImageModel.objects.get(id=image_id, user=request.user)
+            image.image.delete(save=False)
+            image.delete()
+        except UploadImageModel.DoesNotExist:
+            pass
+    return redirect('/upload/')
+
+
 def logout_view(request):
     logout(request)
     return redirect('/')
@@ -143,11 +156,14 @@ def upload_view(request):
                     diving_date=diving_date or None
                 )
             count = len(images)
-            success = f'{count} image{"s" if count > 1 else ""} uploaded successfully!'
+            messages.success(request, f'{count} image{"s" if count > 1 else ""} uploaded successfully!')
+            return redirect('/upload/')
         else:
             error = 'Please select at least one image'
-    
-    images = UploadImageModel.objects.filter(user=request.user).order_by('-diving_date', '-uploaded_at')
+
+    images = UploadImageModel.objects.filter(user=request.user).order_by(
+        models.F('diving_date').desc(nulls_last=True), '-uploaded_at'
+    )
     return render(request, 'upload/upload.html', {
         'error': error,
         'success': success,

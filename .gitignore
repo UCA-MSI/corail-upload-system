@@ -1,2 +1,15 @@
-__pycache__/*
+__pycache__/
 *.pyc
+*.pyo
+
+# Environment
+.env
+
+# Django collected static files
+staticfiles/
+
+# SQLite (dev — production DB lives in a Docker volume)
+db.sqlite3
+
+# Uploaded media (dev)
+media/
