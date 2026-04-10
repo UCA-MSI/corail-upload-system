@@ -1,0 +1,29 @@
+services:
+  web:
+    build: .
+    env_file: .env
+    environment:
+      - DB_PATH=/data/db.sqlite3
+    volumes:
+      - sqlite_data:/data
+      - media_data:/app/media
+      - static_data:/app/staticfiles
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  apache:
+    build: ./docker/apache
+    ports:
+      - "80:80"
+    volumes:
+      - static_data:/var/www/static:ro
+      - media_data:/var/www/media:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:
+  media_data:
+  static_data:
