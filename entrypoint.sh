@@ -7,10 +7,5 @@ python manage.py migrate --noinput
 echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
-echo "Starting Gunicorn..."
-exec gunicorn upload_system.wsgi:application \
-    --bind 0.0.0.0:8000 \
-    --workers 3 \
-    --timeout 120 \
-    --access-logfile - \
-    --error-logfile -
+echo "Starting supervisord..."
+exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
