@@ -8,4 +8,4 @@ echo "Collecting static files..."
 python manage.py collectstatic --noinput
 
 echo "Starting supervisord..."
-exec /usr/bin/supervisord -n -c /etc/supervisor/supervisord.conf
+exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf
