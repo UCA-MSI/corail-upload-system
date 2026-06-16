@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: corail-upload-system-app:latest
     env_file: .env
     environment:
       - DB_PATH=/data/db.sqlite3

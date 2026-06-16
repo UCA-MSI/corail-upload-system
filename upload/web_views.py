@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect
+from django.core.mail import send_mail
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
@@ -66,21 +67,17 @@ def register_view(request):
                 temp_password=temp_password
             )
             
-            # In production, send email here
-            # For now, show the link in the response
-
             activation_link = request.build_absolute_uri(f'/activate/{user.id}/{user.userregistration.token}/')
-            
-            success = f'Registration request submitted! An email has been sent to {email}.'
-            
-            # Store link for demo purposes (remove in production)
-            request.session['demo_activation_link'] = activation_link
-            
-            return render(request, 'upload/register_success.html', {
-                'success': success,
-                'email': email,
-                'activation_link': activation_link
-            })
+
+            send_mail(
+                subject='Activate your Corail account',
+                message=f'Click the link below to activate your account:\n\n{activation_link}',
+                from_email=None,  # uses DEFAULT_FROM_EMAIL
+                recipient_list=[email],
+                fail_silently=False,
+            )
+
+            return render(request, 'upload/register_success.html', {'email': email})
     
     return render(request, 'upload/register.html', {'error': error})
 
