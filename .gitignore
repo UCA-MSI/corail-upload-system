@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
+*.md
 
 # Environment
 .env
