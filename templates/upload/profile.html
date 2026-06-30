@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+
+{% block title %}Profile - Corail{% endblock %}
+
+{% block content %}
+<div class="card wide">
+    <h1>My Profile</h1>
+    <p class="subtitle">{{ user.username }} &mdash; {{ user.email }}</p>
+
+    {% for message in messages %}
+    <div class="{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <h2 class="section-heading">Add a Dive Site</h2>
+
+    <form method="post" action="/profile/">
+        {% csrf_token %}
+        <div>
+            <label for="dive_site">Dive Site</label>
+            {% if known_sites %}
+            <select id="dive_site" name="dive_site">
+                <option value="">— Select a site —</option>
+                {% for site in known_sites %}
+                <option value="{{ site }}">{{ site }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <p class="hint">No dive sites have been uploaded yet. Upload images with a dive site name first.</p>
+            <input type="text" id="dive_site" name="dive_site" placeholder="e.g., Blue Hole">
+            {% endif %}
+        </div>
+        <div class="coords-row">
+            <div>
+                <label for="latitude">Latitude</label>
+                <input type="number" id="latitude" name="latitude" step="0.000001" min="-90" max="90" placeholder="e.g., -17.734025">
+            </div>
+            <div>
+                <label for="longitude">Longitude</label>
+                <input type="number" id="longitude" name="longitude" step="0.000001" min="-180" max="180" placeholder="e.g., 168.322247">
+            </div>
+        </div>
+        <div>
+            <label for="depth">Depth (m)</label>
+            <input type="number" id="depth" name="depth" step="0.01" min="0" placeholder="e.g., 18.5">
+        </div>
+        <button type="submit">Add Dive Site</button>
+    </form>
+
+    {% if entries %}
+    <h2 class="section-heading" style="margin-top: 2.5rem;">My Logged Dive Sites</h2>
+    <div class="dive-table-wrap">
+        <table class="dive-table">
+            <thead>
+                <tr>
+                    <th>Dive Site</th>
+                    <th>Latitude</th>
+                    <th>Longitude</th>
+                    <th>Depth (m)</th>
+                    <th>Added</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                <tr>
+                    <td>{{ entry.dive_site }}</td>
+                    <td>{{ entry.latitude|default:"—" }}</td>
+                    <td>{{ entry.longitude|default:"—" }}</td>
+                    <td>{{ entry.depth|default:"—" }}</td>
+                    <td class="date-cell">{{ entry.added_at|date:"Y-m-d" }}</td>
+                    <td>
+                        <form method="post" action="/profile/delete/{{ entry.id }}/" style="margin:0;">
+                            {% csrf_token %}
+                            <button type="submit" class="btn-remove" title="Remove">×</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="hint" style="margin-top: 2rem; text-align: center;">No dive sites logged yet.</p>
+    {% endif %}
+</div>
+
+<style>
+    .section-heading {
+        color: #555;
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-top: 1.75rem;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 0.4rem;
+    }
+    .coords-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    .hint {
+        color: #999;
+        font-size: 0.9rem;
+    }
+    .dive-table-wrap {
+        overflow-x: auto;
+        margin-top: 0.5rem;
+    }
+    .dive-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+    }
+    .dive-table th {
+        text-align: left;
+        padding: 0.6rem 0.75rem;
+        background: #f0f0f8;
+        color: #555;
+        font-weight: 600;
+        border-bottom: 2px solid #e0e0e0;
+    }
+    .dive-table td {
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+    }
+    .dive-table tr:last-child td {
+        border-bottom: none;
+    }
+    .date-cell {
+        color: #888;
+        font-size: 0.85rem;
+    }
+    .btn-remove {
+        background: none;
+        color: #c33;
+        border: 1px solid #c33;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+        padding: 0;
+        margin: 0;
+        transition: background 0.2s;
+    }
+    .btn-remove:hover {
+        background: #fee;
+        transform: none;
+        box-shadow: none;
+    }
+</style>
+{% endblock %}

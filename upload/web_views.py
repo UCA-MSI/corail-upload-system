@@ -9,7 +9,7 @@ from datetime import timedelta
 from django.db import models
 import secrets
 import string
-from .models import UploadImageModel, UserRegistration
+from .models import UploadImageModel, UserRegistration, UserDiveSite
 
 
 def index(request):
@@ -130,6 +130,53 @@ def delete_image_view(request, image_id):
 def logout_view(request):
     logout(request)
     return redirect('/')
+
+
+@login_required(login_url='/login/')
+def profile_view(request):
+    """Display and update the authenticated user's profile dive-site log."""
+    error = None
+    known_sites = (
+        UploadImageModel.objects
+        .exclude(diving_site='')
+        .values_list('diving_site', flat=True)
+        .distinct()
+        .order_by('diving_site')
+    )
+
+    if request.method == 'POST':
+        dive_site = request.POST.get('dive_site', '').strip()
+        latitude = request.POST.get('latitude', '').strip() or None
+        longitude = request.POST.get('longitude', '').strip() or None
+        depth = request.POST.get('depth', '').strip() or None
+
+        if not dive_site:
+            error = 'Please select a dive site.'
+        else:
+            UserDiveSite.objects.create(
+                user=request.user,
+                dive_site=dive_site,
+                latitude=latitude,
+                longitude=longitude,
+                depth=depth,
+            )
+            messages.success(request, 'Dive site added to your profile.')
+            return redirect('/profile/')
+
+    entries = UserDiveSite.objects.filter(user=request.user).order_by('-added_at')
+    return render(request, 'upload/profile.html', {
+        'error': error,
+        'known_sites': known_sites,
+        'entries': entries,
+    })
+
+
+@login_required(login_url='/login/')
+def delete_dive_site_view(request, entry_id):
+    """Remove a dive-site entry from the authenticated user's profile."""
+    if request.method == 'POST':
+        UserDiveSite.objects.filter(id=entry_id, user=request.user).delete()
+    return redirect('/profile/')
 
 
 @login_required(login_url='/login/')
