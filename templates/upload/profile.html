@@ -11,49 +11,100 @@
     <div class="{{ message.tags }}">{{ message }}</div>
     {% endfor %}
 
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
-
-    <h2 class="section-heading">Add a Dive Site</h2>
-
+    {# ── General info ──────────────────────────────────────────────────── #}
+    <h2 class="section-heading">General Information</h2>
     <form method="post" action="/profile/">
         {% csrf_token %}
+        <input type="hidden" name="action" value="update_profile">
+        <div class="two-col">
+            <div>
+                <label for="first_name">First name</label>
+                <input type="text" id="first_name" name="first_name" value="{{ user.first_name }}">
+            </div>
+            <div>
+                <label for="last_name">Last name</label>
+                <input type="text" id="last_name" name="last_name" value="{{ user.last_name }}">
+            </div>
+        </div>
         <div>
-            <label for="dive_site">Dive Site</label>
-            {% if known_sites %}
-            <select id="dive_site" name="dive_site">
-                <option value="">— Select a site —</option>
-                {% for site in known_sites %}
-                <option value="{{ site }}">{{ site }}</option>
+            <label>Email</label>
+            <input type="email" value="{{ user.email }}" disabled class="disabled-input">
+        </div>
+        <div>
+            <label for="organisation_type">Organisation type</label>
+            <select id="organisation_type" name="organisation_type">
+                <option value="">— Select —</option>
+                {% for value, label in organisation_type_choices %}
+                <option value="{{ value }}" {% if profile.organisation_type == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            {% else %}
-            <p class="hint">No dive sites have been uploaded yet. Upload images with a dive site name first.</p>
-            <input type="text" id="dive_site" name="dive_site" placeholder="e.g., Blue Hole">
-            {% endif %}
         </div>
-        <div class="coords-row">
+        <div>
+            <label for="organisation_responsible">Responsible of organisation</label>
+            <input type="text" id="organisation_responsible" name="organisation_responsible"
+                   value="{{ profile.organisation_responsible }}" placeholder="Full name of the authorising person">
+        </div>
+        <div class="two-col">
             <div>
-                <label for="latitude">Latitude</label>
-                <input type="number" id="latitude" name="latitude" step="0.000001" min="-90" max="90" placeholder="e.g., -17.734025">
+                <label for="country">Country</label>
+                <input type="text" id="country" name="country" value="{{ profile.country }}">
             </div>
             <div>
-                <label for="longitude">Longitude</label>
-                <input type="number" id="longitude" name="longitude" step="0.000001" min="-180" max="180" placeholder="e.g., 168.322247">
+                <label for="location">Location</label>
+                <input type="text" id="location" name="location" value="{{ profile.location }}" placeholder="City / region">
             </div>
         </div>
+        <button type="submit">Save Profile</button>
+    </form>
+
+    {# ── Dive site log ─────────────────────────────────────────────────── #}
+    <h2 class="section-heading" style="margin-top:2.5rem;">Add Dive Site to My Log</h2>
+    <form method="post" action="/profile/" id="diveLogForm">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_dive_site">
+
+        <div>
+            <label for="dive_site_id">Dive site</label>
+            <select id="dive_site_id" name="dive_site_id" onchange="toggleNewSite(this)">
+                <option value="">— Select a site —</option>
+                {% for site in dive_sites %}
+                <option value="{{ site.id }}">{{ site.name }}</option>
+                {% endfor %}
+                <option value="new">+ Add new site…</option>
+            </select>
+        </div>
+
+        <div id="newSiteFields" style="display:none;" class="new-site-box">
+            <div>
+                <label for="new_site_name">New site name</label>
+                <input type="text" id="new_site_name" name="new_site_name" placeholder="e.g., Blue Hole">
+            </div>
+            <div class="two-col">
+                <div>
+                    <label for="new_site_lat">Latitude</label>
+                    <input type="number" id="new_site_lat" name="new_site_lat"
+                           step="0.000001" min="-90" max="90" placeholder="-17.734025">
+                </div>
+                <div>
+                    <label for="new_site_lon">Longitude</label>
+                    <input type="number" id="new_site_lon" name="new_site_lon"
+                           step="0.000001" min="-180" max="180" placeholder="168.322247">
+                </div>
+            </div>
+        </div>
+
         <div>
             <label for="depth">Depth (m)</label>
             <input type="number" id="depth" name="depth" step="0.01" min="0" placeholder="e.g., 18.5">
         </div>
-        <button type="submit">Add Dive Site</button>
+        <button type="submit">Add to Log</button>
     </form>
 
+    {# ── Entries table ─────────────────────────────────────────────────── #}
     {% if entries %}
-    <h2 class="section-heading" style="margin-top: 2.5rem;">My Logged Dive Sites</h2>
-    <div class="dive-table-wrap">
-        <table class="dive-table">
+    <h2 class="section-heading" style="margin-top:2.5rem;">My Dive Log</h2>
+    <div class="table-wrap">
+        <table class="data-table">
             <thead>
                 <tr>
                     <th>Dive Site</th>
@@ -67,9 +118,9 @@
             <tbody>
                 {% for entry in entries %}
                 <tr>
-                    <td>{{ entry.dive_site }}</td>
-                    <td>{{ entry.latitude|default:"—" }}</td>
-                    <td>{{ entry.longitude|default:"—" }}</td>
+                    <td>{{ entry.dive_site.name|default:"—" }}</td>
+                    <td>{{ entry.dive_site.latitude|default:"—" }}</td>
+                    <td>{{ entry.dive_site.longitude|default:"—" }}</td>
                     <td>{{ entry.depth|default:"—" }}</td>
                     <td class="date-cell">{{ entry.added_at|date:"Y-m-d" }}</td>
                     <td>
@@ -84,7 +135,7 @@
         </table>
     </div>
     {% else %}
-    <p class="hint" style="margin-top: 2rem; text-align: center;">No dive sites logged yet.</p>
+    <p class="hint" style="margin-top:2rem;text-align:center;">No dive sites logged yet.</p>
     {% endif %}
 </div>
 
@@ -98,25 +149,33 @@
         border-bottom: 1px solid #e0e0e0;
         padding-bottom: 0.4rem;
     }
-    .coords-row {
+    .two-col {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 1rem;
     }
-    .hint {
+    .disabled-input {
+        background: #f5f5f5;
         color: #999;
-        font-size: 0.9rem;
+        cursor: not-allowed;
     }
-    .dive-table-wrap {
-        overflow-x: auto;
-        margin-top: 0.5rem;
+    .new-site-box {
+        background: #f8f8ff;
+        border: 1px solid #e0e0ff;
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
     }
-    .dive-table {
+    .hint { color: #999; font-size: 0.9rem; }
+    .table-wrap { overflow-x: auto; margin-top: 0.5rem; }
+    .data-table {
         width: 100%;
         border-collapse: collapse;
         font-size: 0.95rem;
     }
-    .dive-table th {
+    .data-table th {
         text-align: left;
         padding: 0.6rem 0.75rem;
         background: #f0f0f8;
@@ -124,18 +183,13 @@
         font-weight: 600;
         border-bottom: 2px solid #e0e0e0;
     }
-    .dive-table td {
+    .data-table td {
         padding: 0.6rem 0.75rem;
         border-bottom: 1px solid #f0f0f0;
         color: #333;
     }
-    .dive-table tr:last-child td {
-        border-bottom: none;
-    }
-    .date-cell {
-        color: #888;
-        font-size: 0.85rem;
-    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .date-cell { color: #888; font-size: 0.85rem; }
     .btn-remove {
         background: none;
         color: #c33;
@@ -148,12 +202,25 @@
         cursor: pointer;
         padding: 0;
         margin: 0;
-        transition: background 0.2s;
     }
-    .btn-remove:hover {
-        background: #fee;
-        transform: none;
-        box-shadow: none;
-    }
+    .btn-remove:hover { background: #fee; transform: none; box-shadow: none; }
 </style>
+
+<script>
+    function toggleNewSite(select) {
+        const fields = document.getElementById('newSiteFields');
+        fields.style.display = select.value === 'new' ? 'flex' : 'none';
+        if (select.value === 'new') {
+            // Clear the select value so it doesn't submit as dive_site_id
+            select.dataset.prev = select.value;
+        }
+    }
+
+    document.getElementById('diveLogForm').addEventListener('submit', function () {
+        const select = document.getElementById('dive_site_id');
+        if (select.value === 'new') {
+            select.value = '';
+        }
+    });
+</script>
 {% endblock %}

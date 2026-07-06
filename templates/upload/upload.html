@@ -51,10 +51,128 @@
             <label for="diving_date">Diving Date</label>
             <input type="date" id="diving_date" name="diving_date">
         </div>
-        <div>
-            <label for="diving_site">Diving Site</label>
-            <input type="text" id="diving_site" name="diving_site" placeholder="e.g., Blue Hole, Great Barrier Reef">
-        </div>
+
+        {# ── Dive site ──────────────────────────────────────────────────── #}
+        <fieldset class="meta-group">
+            <legend>Dive Site</legend>
+            <div>
+                <label for="dive_site_id">Site name</label>
+                <select id="dive_site_id" name="dive_site_id" onchange="toggleUploadNewSite(this)">
+                    <option value="">— Select a site —</option>
+                    {% for site in dive_sites %}
+                    <option value="{{ site.id }}">{{ site.name }}</option>
+                    {% endfor %}
+                    <option value="new">+ Add new site…</option>
+                </select>
+            </div>
+            <div id="uploadNewSiteFields" style="display:none;" class="new-site-box">
+                <div>
+                    <label for="new_site_name">New site name</label>
+                    <input type="text" id="new_site_name" name="new_site_name" placeholder="e.g., Blue Hole">
+                </div>
+                <div class="two-col">
+                    <div>
+                        <label for="new_site_lat">Latitude</label>
+                        <input type="number" id="new_site_lat" name="new_site_lat"
+                               step="0.000001" min="-90" max="90" placeholder="-17.734025">
+                    </div>
+                    <div>
+                        <label for="new_site_lon">Longitude</label>
+                        <input type="number" id="new_site_lon" name="new_site_lon"
+                               step="0.000001" min="-180" max="180" placeholder="168.322247">
+                    </div>
+                </div>
+            </div>
+        </fieldset>
+
+        {# ── Photographer ───────────────────────────────────────────────── #}
+        <fieldset class="meta-group">
+            <legend>Photographer</legend>
+            <div class="two-col">
+                <div>
+                    <label for="photographer_name">First name</label>
+                    <input type="text" id="photographer_name" name="photographer_name"
+                           value="{{ photographer_prefill.name }}">
+                </div>
+                <div>
+                    <label for="photographer_surname">Last name <span class="optional">(optional)</span></label>
+                    <input type="text" id="photographer_surname" name="photographer_surname"
+                           value="{{ photographer_prefill.surname }}">
+                </div>
+            </div>
+            <div>
+                <label for="photographer_email">Email <span class="optional">(optional)</span></label>
+                <input type="email" id="photographer_email" name="photographer_email"
+                       value="{{ photographer_prefill.email }}">
+            </div>
+        </fieldset>
+
+        {# ── Dive master ────────────────────────────────────────────────── #}
+        <fieldset class="meta-group">
+            <legend>Dive Master</legend>
+            <div class="two-col">
+                <div>
+                    <label for="dive_master_name">First name</label>
+                    <input type="text" id="dive_master_name" name="dive_master_name">
+                </div>
+                <div>
+                    <label for="dive_master_surname">Last name</label>
+                    <input type="text" id="dive_master_surname" name="dive_master_surname">
+                </div>
+            </div>
+            <div>
+                <label for="dive_master_email">Email</label>
+                <input type="email" id="dive_master_email" name="dive_master_email">
+            </div>
+        </fieldset>
+
+        {# ── Dive conditions ────────────────────────────────────────────── #}
+        <fieldset class="meta-group">
+            <legend>Dive Conditions</legend>
+            <div class="two-col">
+                <div>
+                    <label for="depth_category">Depth</label>
+                    <select id="depth_category" name="depth_category"
+                            onchange="toggleCustomDepth(this)">
+                        <option value="">— Select —</option>
+                        {% for value, label in depth_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div id="depthCustomWrap" style="display:none;">
+                    <label for="depth_custom">Depth (m)</label>
+                    <input type="number" id="depth_custom" name="depth_custom"
+                           step="0.1" min="0" placeholder="e.g., 22.5">
+                </div>
+            </div>
+            <div>
+                <label for="water_temperature">Water temperature (°C)</label>
+                <input type="number" id="water_temperature" name="water_temperature"
+                       step="0.1" placeholder="e.g., 26.5">
+            </div>
+            <div class="two-col">
+                <div>
+                    <label for="water_conditions">Water conditions</label>
+                    <select id="water_conditions" name="water_conditions">
+                        <option value="">— Select —</option>
+                        {% for value, label in water_condition_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label for="weather_conditions">Weather conditions</label>
+                    <select id="weather_conditions" name="weather_conditions">
+                        <option value="">— Select —</option>
+                        {% for value, label in weather_condition_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </fieldset>
+
         <div>
             <label for="description">Description</label>
             <textarea id="description" name="description" rows="3" placeholder="Any additional info..."></textarea>
@@ -76,8 +194,8 @@
                 {% if img.diving_date %}
                 <div class="date">📅 {{ img.diving_date }}</div>
                 {% endif %}
-                {% if img.diving_site %}
-                <div class="description">📍 {{ img.diving_site }}</div>
+                {% if img.dive_site %}
+                <div class="description">📍 {{ img.dive_site.name }}</div>
                 {% endif %}
                 {% if img.description %}
                 <div class="description">{{ img.description }}</div>
@@ -199,6 +317,38 @@
         cursor: pointer;
         padding: 0;
         margin: 0;
+    }
+    .meta-group {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin: 0;
+    }
+    .meta-group legend {
+        color: #667eea;
+        font-weight: 600;
+        font-size: 0.9rem;
+        padding: 0 0.4rem;
+    }
+    .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    .new-site-box {
+        background: #f8f8ff;
+        border: 1px solid #e0e0ff;
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-top: 0.75rem;
+    }
+    .optional {
+        color: #aaa;
+        font-size: 0.8rem;
+        font-weight: 400;
     }
     .preview-card .file-label {
         padding: 0.35rem 0.5rem;
@@ -334,6 +484,25 @@
             if (!batch.length) break;
             await Promise.all(batch.map(entry => collectEntry(entry, out)));
         }
+    }
+
+    // --- Dive site new-site toggle ---
+
+    function toggleUploadNewSite(select) {
+        document.getElementById('uploadNewSiteFields').style.display =
+            select.value === 'new' ? 'block' : 'none';
+    }
+
+    document.getElementById('uploadForm').addEventListener('submit', function () {
+        const select = document.getElementById('dive_site_id');
+        if (select.value === 'new') select.value = '';
+    });
+
+    // --- Depth free-entry toggle ---
+
+    function toggleCustomDepth(select) {
+        document.getElementById('depthCustomWrap').style.display =
+            select.value === 'custom' ? 'block' : 'none';
     }
 
     // --- Individual file input label update ---
