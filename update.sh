@@ -2,7 +2,7 @@
 set -e
 
 APP_DIR="$(cd "$(dirname "$0")" && pwd)"
-IMAGE_NAME="corail-upload-system-app:latest"
+IMAGE_NAME="ircan/corail:latest"
 
 cd "$APP_DIR"
 

@@ -2,7 +2,8 @@ version: "3.3"
 
 services:
   app:
-    image: corail-upload-system-app:latest
+    image: ircan/corail:latest
+    container_name: Website_Corail
     env_file: .env
     environment:
       - DB_PATH=/data/db.sqlite3
