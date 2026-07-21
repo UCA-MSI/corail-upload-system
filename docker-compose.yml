@@ -7,7 +7,7 @@ services:
     environment:
       - DB_PATH=/data/db.sqlite3
     ports:
-      - "80:80"
+      - "8283:80"
     volumes:
       - sqlite_data:/data
       - media_data:/app/media
