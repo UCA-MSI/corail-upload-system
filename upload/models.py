@@ -10,7 +10,8 @@ ORGANISATION_TYPE_CHOICES = [
 
 DEPTH_CHOICES = [
     ('0_5m', '0 – 5 m'),
-    ('5_10m', '5 – 10 m'),
+    ('5m', '5 m'),
+    ('10m', '10 m'),
     ('gt_10m', '> 10 m'),
     ('custom', 'Free entry'),
 ]
