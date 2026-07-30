@@ -47,9 +47,20 @@
             <div id="imagePreviews" class="image-grid"></div>
         </div>
 
-        <div>
-            <label for="diving_date">Diving Date</label>
-            <input type="date" id="diving_date" name="diving_date">
+        <div class="two-col">
+            <div>
+                <label for="diving_date">Diving Date</label>
+                <input type="date" id="diving_date" name="diving_date" required>
+            </div>
+            <div>
+                <label for="dive_time">Dive time</label>
+                <select id="dive_time" name="dive_time">
+                    <option value="">— Select —</option>
+                    {% for value, label in dive_time_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         {# ── Dive site ──────────────────────────────────────────────────── #}
@@ -57,31 +68,15 @@
             <legend>Dive Site</legend>
             <div>
                 <label for="dive_site_id">Site name</label>
-                <select id="dive_site_id" name="dive_site_id" onchange="toggleUploadNewSite(this)">
+                <select id="dive_site_id" name="dive_site_id">
                     <option value="">— Select a site —</option>
                     {% for site in dive_sites %}
-                    <option value="{{ site.id }}">{{ site.name }}</option>
+                    <option value="{{ site.id }}">
+                        {{ site.name }}{% if site.region %} ({{ site.region }}){% endif %}
+                    </option>
                     {% endfor %}
-                    <option value="new">+ Add new site…</option>
                 </select>
-            </div>
-            <div id="uploadNewSiteFields" style="display:none;" class="new-site-box">
-                <div>
-                    <label for="new_site_name">New site name</label>
-                    <input type="text" id="new_site_name" name="new_site_name" placeholder="e.g., Blue Hole">
-                </div>
-                <div class="two-col">
-                    <div>
-                        <label for="new_site_lat">Latitude</label>
-                        <input type="number" id="new_site_lat" name="new_site_lat"
-                               step="0.000001" min="-90" max="90" placeholder="-17.734025">
-                    </div>
-                    <div>
-                        <label for="new_site_lon">Longitude</label>
-                        <input type="number" id="new_site_lon" name="new_site_lon"
-                               step="0.000001" min="-180" max="180" placeholder="168.322247">
-                    </div>
-                </div>
+                <p class="hint">Don't see your site? Add it from your <a href="/profile/">profile page</a> first.</p>
             </div>
         </fieldset>
 
@@ -192,7 +187,7 @@
             </form>
             <div class="info">
                 {% if img.diving_date %}
-                <div class="date">📅 {{ img.diving_date }}</div>
+                <div class="date">📅 {{ img.diving_date }}{% if img.dive_time %} ({{ img.get_dive_time_display }}){% endif %}</div>
                 {% endif %}
                 {% if img.dive_site %}
                 <div class="description">📍 {{ img.dive_site.name }}</div>
@@ -335,15 +330,10 @@
         grid-template-columns: 1fr 1fr;
         gap: 1rem;
     }
-    .new-site-box {
-        background: #f8f8ff;
-        border: 1px solid #e0e0ff;
-        border-radius: 8px;
-        padding: 1rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-        margin-top: 0.75rem;
+    .hint {
+        color: #999;
+        font-size: 0.85rem;
+        margin-top: 0.4rem;
     }
     .optional {
         color: #aaa;
@@ -485,18 +475,6 @@
             await Promise.all(batch.map(entry => collectEntry(entry, out)));
         }
     }
-
-    // --- Dive site new-site toggle ---
-
-    function toggleUploadNewSite(select) {
-        document.getElementById('uploadNewSiteFields').style.display =
-            select.value === 'new' ? 'block' : 'none';
-    }
-
-    document.getElementById('uploadForm').addEventListener('submit', function () {
-        const select = document.getElementById('dive_site_id');
-        if (select.value === 'new') select.value = '';
-    });
 
     // --- Depth free-entry toggle ---
 

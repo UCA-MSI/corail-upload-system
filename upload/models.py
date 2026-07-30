@@ -8,6 +8,11 @@ ORGANISATION_TYPE_CHOICES = [
     ('private', 'Private'),
 ]
 
+DIVE_TIME_CHOICES = [
+    ('morning', 'Morning'),
+    ('afternoon', 'Afternoon'),
+]
+
 DEPTH_CHOICES = [
     ('0_5m', '0 – 5 m'),
     ('5m', '5 m'),
@@ -38,8 +43,13 @@ class DiveSite(models.Model):
     """Canonical dive site registry shared across all users."""
 
     name = models.CharField(max_length=255, unique=True)
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    country = models.CharField(max_length=100, default='Indonesia', blank=True)
+    region = models.CharField(
+        max_length=255, blank=True,
+        help_text='Region / Island / City, e.g., Raja Ampat / Misool - Marine Protected Area',
+    )
+    latitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_sites'
     )
@@ -53,7 +63,8 @@ class UploadImageModel(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploaded_images')
     image = models.ImageField(upload_to='images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
-    diving_date = models.DateField(null=True, blank=True)
+    diving_date = models.DateField()
+    dive_time = models.CharField(max_length=10, choices=DIVE_TIME_CHOICES, blank=True)
     description = models.TextField(blank=True)
     dive_site = models.ForeignKey(
         DiveSite, on_delete=models.SET_NULL, null=True, blank=True, related_name='images'

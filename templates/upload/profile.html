@@ -68,7 +68,9 @@
             <select id="dive_site_id" name="dive_site_id" onchange="toggleNewSite(this)">
                 <option value="">— Select a site —</option>
                 {% for site in dive_sites %}
-                <option value="{{ site.id }}">{{ site.name }}</option>
+                <option value="{{ site.id }}">
+                    {{ site.name }}{% if site.region %} ({{ site.region }}){% endif %}
+                </option>
                 {% endfor %}
                 <option value="new">+ Add new site…</option>
             </select>
@@ -81,14 +83,25 @@
             </div>
             <div class="two-col">
                 <div>
+                    <label for="new_site_country">Country</label>
+                    <input type="text" id="new_site_country" name="new_site_country" value="Indonesia">
+                </div>
+                <div>
+                    <label for="new_site_region">Region / Island / City</label>
+                    <input type="text" id="new_site_region" name="new_site_region"
+                           placeholder="e.g., Raja Ampat / Misool - Marine Protected Area">
+                </div>
+            </div>
+            <div class="two-col">
+                <div>
                     <label for="new_site_lat">Latitude</label>
                     <input type="number" id="new_site_lat" name="new_site_lat"
-                           step="0.000001" min="-90" max="90" placeholder="-17.734025">
+                           step="0.0000000001" min="-90" max="90" placeholder="-17.7340254821">
                 </div>
                 <div>
                     <label for="new_site_lon">Longitude</label>
                     <input type="number" id="new_site_lon" name="new_site_lon"
-                           step="0.000001" min="-180" max="180" placeholder="168.322247">
+                           step="0.0000000001" min="-180" max="180" placeholder="168.3222471963">
                 </div>
             </div>
         </div>
@@ -108,6 +121,8 @@
             <thead>
                 <tr>
                     <th>Dive Site</th>
+                    <th>Country</th>
+                    <th>Region / Island / City</th>
                     <th>Latitude</th>
                     <th>Longitude</th>
                     <th>Depth (m)</th>
@@ -119,6 +134,8 @@
                 {% for entry in entries %}
                 <tr>
                     <td>{{ entry.dive_site.name|default:"—" }}</td>
+                    <td>{{ entry.dive_site.country|default:"—" }}</td>
+                    <td>{{ entry.dive_site.region|default:"—" }}</td>
                     <td>{{ entry.dive_site.latitude|default:"—" }}</td>
                     <td>{{ entry.dive_site.longitude|default:"—" }}</td>
                     <td>{{ entry.depth|default:"—" }}</td>

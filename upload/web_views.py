@@ -10,7 +10,7 @@ import string
 from .models import (
     UploadImageModel, UserRegistration, UserProfile,
     DiveSite, UserDiveSite,
-    ORGANISATION_TYPE_CHOICES, DEPTH_CHOICES,
+    ORGANISATION_TYPE_CHOICES, DIVE_TIME_CHOICES, DEPTH_CHOICES,
     WATER_CONDITION_CHOICES, WEATHER_CONDITION_CHOICES,
 )
 
@@ -148,11 +148,16 @@ def profile_view(request):
             if dive_site_id:
                 dive_site = DiveSite.objects.filter(id=dive_site_id).first()
             elif new_site_name:
+                country = request.POST.get('new_site_country', '').strip() or 'Indonesia'
+                region = request.POST.get('new_site_region', '').strip()
                 lat = request.POST.get('new_site_lat', '').strip() or None
                 lon = request.POST.get('new_site_lon', '').strip() or None
                 dive_site, _ = DiveSite.objects.get_or_create(
                     name=new_site_name,
-                    defaults={'latitude': lat, 'longitude': lon, 'created_by': request.user},
+                    defaults={
+                        'country': country, 'region': region,
+                        'latitude': lat, 'longitude': lon, 'created_by': request.user,
+                    },
                 )
 
             if dive_site:
@@ -162,7 +167,7 @@ def profile_view(request):
                 messages.error(request, 'Please select or enter a dive site.')
             return redirect('/profile/')
 
-    dive_sites = DiveSite.objects.all().order_by('name')
+    dive_sites = DiveSite.objects.all().order_by('region', 'name')
     entries = (
         UserDiveSite.objects
         .filter(user=request.user)
@@ -193,27 +198,19 @@ def upload_view(request):
     if request.method == 'POST':
         images = request.FILES.getlist('images')
 
-        # Dive site: existing FK or new site entered inline
+        # Dive site: must be selected from the existing registry (created via the profile page)
         dive_site_id = request.POST.get('dive_site_id', '').strip()
-        new_site_name = request.POST.get('new_site_name', '').strip()
-        dive_site = None
-        if dive_site_id:
-            dive_site = DiveSite.objects.filter(id=dive_site_id).first()
-        elif new_site_name:
-            lat = request.POST.get('new_site_lat', '').strip() or None
-            lon = request.POST.get('new_site_lon', '').strip() or None
-            dive_site, _ = DiveSite.objects.get_or_create(
-                name=new_site_name,
-                defaults={'latitude': lat, 'longitude': lon, 'created_by': request.user},
-            )
+        dive_site = DiveSite.objects.filter(id=dive_site_id).first() if dive_site_id else None
 
+        diving_date = request.POST.get('diving_date', '').strip() or None
         depth_custom = request.POST.get('depth_custom', '').strip() or None
         water_temperature = request.POST.get('water_temperature', '').strip() or None
 
         common_fields = dict(
             description=request.POST.get('description', ''),
             dive_site=dive_site,
-            diving_date=request.POST.get('diving_date', '') or None,
+            diving_date=diving_date,
+            dive_time=request.POST.get('dive_time', ''),
             photographer_name=request.POST.get('photographer_name', ''),
             photographer_surname=request.POST.get('photographer_surname', ''),
             photographer_email=request.POST.get('photographer_email', ''),
@@ -227,7 +224,9 @@ def upload_view(request):
             weather_conditions=request.POST.get('weather_conditions', ''),
         )
 
-        if images:
+        if not diving_date:
+            error = 'Please enter the diving date'
+        elif images:
             for image in images:
                 UploadImageModel.objects.create(user=request.user, image=image, **common_fields)
             count = len(images)
@@ -239,7 +238,7 @@ def upload_view(request):
     images = UploadImageModel.objects.filter(user=request.user).select_related('dive_site').order_by(
         models.F('diving_date').desc(nulls_last=True), '-uploaded_at'
     )
-    dive_sites = DiveSite.objects.all().order_by('name')
+    dive_sites = DiveSite.objects.all().order_by('region', 'name')
     photographer_prefill = {
         'name': request.user.first_name,
         'surname': request.user.last_name,
@@ -250,6 +249,7 @@ def upload_view(request):
         'images': images,
         'dive_sites': dive_sites,
         'photographer_prefill': photographer_prefill,
+        'dive_time_choices': DIVE_TIME_CHOICES,
         'depth_choices': DEPTH_CHOICES,
         'water_condition_choices': WATER_CONDITION_CHOICES,
         'weather_condition_choices': WEATHER_CONDITION_CHOICES,
