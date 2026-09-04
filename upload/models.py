@@ -63,6 +63,7 @@ class UploadImageModel(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploaded_images')
     image = models.ImageField(upload_to='images/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    session_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
     diving_date = models.DateField()
     dive_time = models.CharField(max_length=10, choices=DIVE_TIME_CHOICES, blank=True)
     description = models.TextField(blank=True)

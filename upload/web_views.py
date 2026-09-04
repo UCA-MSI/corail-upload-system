@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.db import models
 import secrets
 import string
+import uuid
 from .models import (
     UploadImageModel, UserRegistration, UserProfile,
     DiveSite, UserDiveSite,
@@ -227,17 +228,18 @@ def upload_view(request):
         if not diving_date:
             error = 'Please enter the diving date'
         elif images:
+            session_id = uuid.uuid4()
             for image in images:
-                UploadImageModel.objects.create(user=request.user, image=image, **common_fields)
+                UploadImageModel.objects.create(
+                    user=request.user, image=image, session_id=session_id, **common_fields
+                )
             count = len(images)
             messages.success(request, f'{count} image{"s" if count > 1 else ""} uploaded successfully!')
             return redirect('/upload/')
         else:
             error = 'Please select at least one image'
 
-    images = UploadImageModel.objects.filter(user=request.user).select_related('dive_site').order_by(
-        models.F('diving_date').desc(nulls_last=True), '-uploaded_at'
-    )
+    sessions = _get_upload_sessions(request.user)
     dive_sites = DiveSite.objects.all().order_by('region', 'name')
     photographer_prefill = {
         'name': request.user.first_name,
@@ -246,7 +248,8 @@ def upload_view(request):
     }
     return render(request, 'upload/upload.html', {
         'error': error,
-        'images': images,
+        'sessions': sessions,
+        'filter_options': _get_session_filter_options(sessions),
         'dive_sites': dive_sites,
         'photographer_prefill': photographer_prefill,
         'dive_time_choices': DIVE_TIME_CHOICES,
@@ -254,6 +257,122 @@ def upload_view(request):
         'water_condition_choices': WATER_CONDITION_CHOICES,
         'weather_condition_choices': WEATHER_CONDITION_CHOICES,
     })
+
+
+def _depth_label(image):
+    """Human-readable depth for one image, e.g. '5 m' or '22.5 m'."""
+    if image.depth_category == 'custom' and image.depth_custom:
+        return f'{image.depth_custom} m'
+    if image.depth_category:
+        return image.get_depth_category_display()
+    return ''
+
+
+def _water_temp_label(image):
+    """Human-readable water temperature for one image, e.g. '26.5 °C'."""
+    return f'{image.water_temperature} °C' if image.water_temperature is not None else ''
+
+
+def _get_upload_sessions(user):
+    """Group a user's uploaded images by session, one representative image each."""
+    images = UploadImageModel.objects.filter(user=user).select_related('dive_site').order_by(
+        models.F('diving_date').desc(nulls_last=True), '-uploaded_at'
+    )
+    sessions = {}
+    for image in images:
+        session = sessions.setdefault(image.session_id, image)
+        session.image_count = getattr(session, 'image_count', 0) + 1
+    for session in sessions.values():
+        session.depth_label = _depth_label(session)
+        session.water_temp_label = _water_temp_label(session)
+    return list(sessions.values())
+
+
+def _get_session_filter_options(sessions):
+    """Distinct, sorted values actually present in `sessions`, for the table's dropdown filters."""
+    return {
+        'date': sorted({str(s.diving_date) for s in sessions if s.diving_date}),
+        'site': sorted({s.dive_site.name for s in sessions if s.dive_site}),
+        'time': sorted({s.get_dive_time_display() for s in sessions if s.dive_time}),
+        'weather': sorted({s.get_weather_conditions_display() for s in sessions if s.weather_conditions}),
+        'depth': sorted({s.depth_label for s in sessions if s.depth_label}),
+        'water_temp': sorted({s.water_temp_label for s in sessions if s.water_temp_label}),
+        'water_conditions': sorted({s.get_water_conditions_display() for s in sessions if s.water_conditions}),
+    }
+
+
+@login_required(login_url='/login/')
+def session_detail_view(request, session_id):
+    """List the images of one upload session and let the user edit each one."""
+    if request.method == 'POST':
+        action = request.POST.get('action', 'edit_image')
+
+        if action == 'edit_session':
+            _update_session_date_and_site(request, session_id)
+            return redirect('session_detail', session_id=session_id)
+
+        image_id = request.POST.get('image_id', '').strip()
+        image = UploadImageModel.objects.filter(
+            id=image_id, user=request.user, session_id=session_id
+        ).first()
+
+        if image:
+            dive_site_id = request.POST.get('dive_site_id', '').strip()
+            image.dive_site = DiveSite.objects.filter(id=dive_site_id).first() if dive_site_id else None
+            image.diving_date = request.POST.get('diving_date', '').strip() or image.diving_date
+            image.dive_time = request.POST.get('dive_time', '')
+            image.description = request.POST.get('description', '')
+            image.photographer_name = request.POST.get('photographer_name', '')
+            image.photographer_surname = request.POST.get('photographer_surname', '')
+            image.photographer_email = request.POST.get('photographer_email', '')
+            image.dive_master_name = request.POST.get('dive_master_name', '')
+            image.dive_master_surname = request.POST.get('dive_master_surname', '')
+            image.dive_master_email = request.POST.get('dive_master_email', '')
+            image.depth_category = request.POST.get('depth_category', '')
+            image.depth_custom = request.POST.get('depth_custom', '').strip() or None
+            image.water_temperature = request.POST.get('water_temperature', '').strip() or None
+            image.water_conditions = request.POST.get('water_conditions', '')
+            image.weather_conditions = request.POST.get('weather_conditions', '')
+            image.save()
+            messages.success(request, 'Picture updated.')
+        return redirect('session_detail', session_id=session_id)
+
+    images = list(
+        UploadImageModel.objects.filter(user=request.user, session_id=session_id)
+        .select_related('dive_site').order_by('id')
+    )
+
+    if not images:
+        messages.error(request, 'Upload session not found.')
+        return redirect('/upload/')
+
+    dive_sites = DiveSite.objects.all().order_by('region', 'name')
+    return render(request, 'upload/session_detail.html', {
+        'session_id': session_id,
+        'images': images,
+        'representative': images[0],
+        'dive_sites': dive_sites,
+        'dive_time_choices': DIVE_TIME_CHOICES,
+        'depth_choices': DEPTH_CHOICES,
+        'water_condition_choices': WATER_CONDITION_CHOICES,
+        'weather_condition_choices': WEATHER_CONDITION_CHOICES,
+    })
+
+
+def _update_session_date_and_site(request, session_id):
+    """Apply a shared diving date and dive site to every picture in a session at once."""
+    diving_date = request.POST.get('diving_date', '').strip()
+    if not diving_date:
+        messages.error(request, 'Please enter the diving date.')
+        return
+
+    dive_site_id = request.POST.get('dive_site_id', '').strip()
+    dive_site = DiveSite.objects.filter(id=dive_site_id).first() if dive_site_id else None
+
+    UploadImageModel.objects.filter(user=request.user, session_id=session_id).update(
+        diving_date=diving_date, dive_site=dive_site
+    )
+    messages.success(request, 'Date and site updated for all pictures in this session.')
 
 
 @login_required(login_url='/login/')
@@ -265,4 +384,4 @@ def delete_image_view(request, image_id):
             image.delete()
         except UploadImageModel.DoesNotExist:
             pass
-    return redirect('/upload/')
+    return redirect(request.POST.get('next') or '/upload/')

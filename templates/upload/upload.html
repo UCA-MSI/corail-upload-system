@@ -175,29 +175,85 @@
         <button type="submit">Upload Photos</button>
     </form>
 
-    {% if images %}
-    <h3 style="margin-top: 2rem; color: #555;">Your Uploads</h3>
-    <div class="image-grid">
-        {% for img in images %}
-        <div class="image-card" style="position:relative;">
-            <img src="{{ img.image.url }}" alt="{{ img.description|default:'' }}">
-            <form method="post" action="/upload/delete/{{ img.id }}/" style="position:absolute;top:4px;right:4px;margin:0;">
-                {% csrf_token %}
-                <button type="submit" class="remove-btn" title="Delete">×</button>
-            </form>
-            <div class="info">
-                {% if img.diving_date %}
-                <div class="date">📅 {{ img.diving_date }}{% if img.dive_time %} ({{ img.get_dive_time_display }}){% endif %}</div>
-                {% endif %}
-                {% if img.dive_site %}
-                <div class="description">📍 {{ img.dive_site.name }}</div>
-                {% endif %}
-                {% if img.description %}
-                <div class="description">{{ img.description }}</div>
-                {% endif %}
-            </div>
-        </div>
-        {% endfor %}
+    {% if sessions %}
+    <h3 style="margin-top: 2rem; color: #555;">Your Upload Sessions</h3>
+    <div class="table-wrap">
+        <table class="data-table" id="sessionsTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Site</th>
+                    <th>Dive time</th>
+                    <th>Photos</th>
+                    <th>Weather</th>
+                    <th>Depth</th>
+                    <th>Water temp</th>
+                    <th>Water cond.</th>
+                    <th></th>
+                </tr>
+                <tr class="filter-row">
+                    <th>
+                        <select data-col-index="0" onchange="filterSessions()">
+                            <option value="">All dates</option>
+                            {% for v in filter_options.date %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>
+                        <select data-col-index="1" onchange="filterSessions()">
+                            <option value="">All sites</option>
+                            {% for v in filter_options.site %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>
+                        <select data-col-index="2" onchange="filterSessions()">
+                            <option value="">All times</option>
+                            {% for v in filter_options.time %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th></th>
+                    <th>
+                        <select data-col-index="4" onchange="filterSessions()">
+                            <option value="">All weather</option>
+                            {% for v in filter_options.weather %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>
+                        <select data-col-index="5" onchange="filterSessions()">
+                            <option value="">All depths</option>
+                            {% for v in filter_options.depth %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>
+                        <select data-col-index="6" onchange="filterSessions()">
+                            <option value="">All temps</option>
+                            {% for v in filter_options.water_temp %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th>
+                        <select data-col-index="7" onchange="filterSessions()">
+                            <option value="">All water cond.</option>
+                            {% for v in filter_options.water_conditions %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+                        </select>
+                    </th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr>
+                    <td>{{ s.diving_date|default:"—" }}</td>
+                    <td>{{ s.dive_site.name|default:"—" }}</td>
+                    <td>{{ s.get_dive_time_display|default:"—" }}</td>
+                    <td>{{ s.image_count }}</td>
+                    <td>{{ s.get_weather_conditions_display|default:"—" }}</td>
+                    <td>{{ s.depth_label|default:"—" }}</td>
+                    <td>{{ s.water_temp_label|default:"—" }}</td>
+                    <td>{{ s.get_water_conditions_display|default:"—" }}</td>
+                    <td><a href="{% url 'session_detail' s.session_id %}" class="btn-secondary">Edit</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
     {% endif %}
 </div>
@@ -347,6 +403,41 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+    }
+    .table-wrap { overflow-x: auto; margin-top: 0.5rem; }
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.95rem;
+    }
+    .data-table th {
+        text-align: left;
+        padding: 0.6rem 0.75rem;
+        background: #f0f0f8;
+        color: #555;
+        font-weight: 600;
+        border-bottom: 2px solid #e0e0e0;
+        white-space: nowrap;
+    }
+    .data-table td {
+        padding: 0.6rem 0.75rem;
+        border-bottom: 1px solid #f0f0f0;
+        color: #333;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .filter-row th { background: white; padding: 0.3rem 0.5rem; border-bottom: 2px solid #e0e0e0; }
+    .filter-row select {
+        width: 100%;
+        padding: 0.35rem 0.4rem;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 0.8rem;
+        color: #555;
+        background: white;
+    }
+    .filter-row select:focus {
+        outline: none;
+        border-color: #667eea;
     }
 </style>
 
@@ -499,5 +590,22 @@
             alert('Please select at least one image.');
         }
     });
+
+    // --- Sessions table filtering (dropdown, exact match, per column) ---
+
+    function filterSessions() {
+        const table = document.getElementById('sessionsTable');
+        if (!table) return;
+        const filters = Array.from(table.querySelectorAll('.filter-row select'))
+            .filter(select => select.value)
+            .map(select => ({ colIndex: parseInt(select.dataset.colIndex, 10), value: select.value }));
+        table.querySelectorAll('tbody tr').forEach(row => {
+            const cells = row.querySelectorAll('td');
+            const visible = filters.every(
+                f => cells[f.colIndex].textContent.trim() === f.value
+            );
+            row.hidden = !visible;
+        });
+    }
 </script>
 {% endblock %}

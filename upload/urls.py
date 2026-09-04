@@ -8,6 +8,7 @@ urlpatterns = [
     path('activate/<int:user_id>/<uuid:token>/', web_views.activate_view, name='activate'),
     path('logout/', web_views.logout_view, name='logout'),
     path('upload/', web_views.upload_view, name='upload'),
+    path('upload/session/<uuid:session_id>/', web_views.session_detail_view, name='session_detail'),
     path('upload/delete/<int:image_id>/', web_views.delete_image_view, name='delete_image'),
     path('profile/', web_views.profile_view, name='profile'),
     path('profile/delete/<int:entry_id>/', web_views.delete_dive_site_view, name='delete_dive_site'),
