@@ -13,8 +13,8 @@ echo "==> Building Docker image..."
 docker build -t "$IMAGE_NAME" .
 
 echo "==> Restarting containers..."
-docker compose down
-docker compose up -d
+docker-compose down
+docker-compose up -d
 
 echo "==> Done. Checking status..."
-docker compose ps
+docker-compose ps
