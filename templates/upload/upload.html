@@ -443,6 +443,7 @@
 
 <script>
     let allFiles = [];
+    let previewUrls = [];
 
     // --- File accumulation ---
 
@@ -484,10 +485,18 @@
     }
 
     // --- Preview rendering (no innerHTML with user data to prevent XSS) ---
+    //
+    // Uses createObjectURL rather than FileReader.readAsDataURL: the latter reads and
+    // base64-re-encodes every file into memory up front, which crashes Safari tabs on
+    // large folder uploads (100+ photos). Object URLs are cheap references to the
+    // existing file blob, and lazy loading defers decoding until a preview scrolls
+    // into view.
 
     function renderPreviews() {
         const container = document.getElementById('imagePreviews');
         container.innerHTML = '';
+        previewUrls.forEach(url => URL.revokeObjectURL(url));
+        previewUrls = [];
 
         allFiles.forEach((file, index) => {
             const card = document.createElement('div');
@@ -495,6 +504,10 @@
 
             const img = document.createElement('img');
             img.alt = '';
+            img.loading = 'lazy';
+            const url = URL.createObjectURL(file);
+            previewUrls.push(url);
+            img.src = url;
 
             const label = document.createElement('div');
             label.className = 'file-label';
@@ -510,10 +523,6 @@
             card.appendChild(removeBtn);
             card.appendChild(label);
             container.appendChild(card);
-
-            const reader = new FileReader();
-            reader.onload = (e) => { img.src = e.target.result; };
-            reader.readAsDataURL(file);
         });
     }
 
