@@ -447,10 +447,24 @@
 
     // --- File accumulation ---
 
+    const IMAGE_EXTENSIONS = new Set(
+        ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'heic', 'heif']
+    );
+
+    // Safari's FileSystemFileEntry.file() (the API behind folder/file drag-and-drop)
+    // returns File objects with an empty `.type`, even for ordinary photos, so the
+    // MIME check alone silently drops every dragged file on Safari. Fall back to
+    // the file extension in that case.
+    function isImageFile(file) {
+        if (file.type.startsWith('image/')) return true;
+        const ext = file.name.split('.').pop().toLowerCase();
+        return IMAGE_EXTENSIONS.has(ext);
+    }
+
     function addFiles(fileList) {
         let added = 0;
         for (const file of fileList) {
-            if (!file.type.startsWith('image/')) continue;
+            if (!isImageFile(file)) continue;
             const isDupe = allFiles.some(f => f.name === file.name && f.size === file.size);
             if (!isDupe) {
                 allFiles.push(file);
@@ -557,7 +571,7 @@
     async function collectEntry(entry, out) {
         if (entry.isFile) {
             await new Promise(resolve => entry.file(file => {
-                if (file.type.startsWith('image/')) out.push(file);
+                if (isImageFile(file)) out.push(file);
                 resolve();
             }));
         } else if (entry.isDirectory) {
