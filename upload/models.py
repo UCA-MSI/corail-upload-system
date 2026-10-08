@@ -50,6 +50,15 @@ class DiveSite(models.Model):
     )
     latitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
     longitude = models.DecimalField(max_digits=13, decimal_places=10, null=True, blank=True)
+    site_id = models.CharField(
+        max_length=20, unique=True, null=True, blank=True,
+        help_text='coraldb site id, e.g. 13.1 — one location at one depth',
+    )
+    depth = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    source_version = models.CharField(
+        max_length=20, blank=True,
+        help_text='coraldb dive_sites version this reference site was imported from',
+    )
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name='created_sites'
     )
@@ -57,6 +66,16 @@ class DiveSite(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def is_reference(self) -> bool:
+        """Reference sites come from coraldb and must never be modified."""
+        return bool(self.source_version)
+
+    @property
+    def site_group(self) -> str:
+        """The physical site a site_id belongs to: '13' for '13.1' and '13.2'."""
+        return self.site_id.split('.')[0] if self.site_id else ''
 
 
 class UploadImageModel(models.Model):

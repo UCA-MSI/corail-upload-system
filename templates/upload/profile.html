@@ -72,15 +72,25 @@
                     {{ site.name }}{% if site.region %} ({{ site.region }}){% endif %}
                 </option>
                 {% endfor %}
-                <option value="new">+ Add new site…</option>
+                <option value="new"{% if new_site_prefill.new_site_id %} selected{% endif %}>+ Add new site…</option>
             </select>
         </div>
 
-        <div id="newSiteFields" style="display:none;" class="new-site-box">
-            <div>
-                <label for="new_site_name">New site name</label>
-                <input type="text" id="new_site_name" name="new_site_name" placeholder="e.g., Blue Hole">
+        <div id="newSiteFields" class="new-site-box"
+             style="display:{% if new_site_prefill.new_site_id %}flex{% else %}none{% endif %};">
+            <div class="two-col">
+                <div>
+                    <label for="new_site_name">New site name</label>
+                    <input type="text" id="new_site_name" name="new_site_name" placeholder="e.g., Blue Hole">
+                </div>
+                <div>
+                    <label for="new_site_id">Site id</label>
+                    <input type="text" id="new_site_id" name="new_site_id" pattern="\d+\.\d+"
+                           placeholder="e.g., 13.3" value="{{ new_site_prefill.new_site_id }}">
+                </div>
             </div>
+            <p class="hint">A site id is one location at one depth: site number, dot, sub-site number.
+                Set the depth below.</p>
             <div class="two-col">
                 <div>
                     <label for="new_site_country">Country</label>
@@ -89,6 +99,7 @@
                 <div>
                     <label for="new_site_region">Region / Island / City</label>
                     <input type="text" id="new_site_region" name="new_site_region"
+                           value="{{ new_site_prefill.new_site_region }}"
                            placeholder="e.g., Raja Ampat / Misool - Marine Protected Area">
                 </div>
             </div>
@@ -108,7 +119,8 @@
 
         <div>
             <label for="depth">Depth (m)</label>
-            <input type="number" id="depth" name="depth" step="0.01" min="0" placeholder="e.g., 18.5">
+            <input type="number" id="depth" name="depth" step="0.01" min="0" placeholder="e.g., 18.5"
+                   value="{{ new_site_prefill.depth }}">
         </div>
         <button type="submit">Add to Log</button>
     </form>

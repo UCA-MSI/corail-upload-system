@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db import models
+import re
 import secrets
 import string
 import uuid
@@ -15,9 +16,13 @@ from .models import (
     ORGANISATION_TYPE_CHOICES, DIVE_TIME_CHOICES, DEPTH_CHOICES,
     WATER_CONDITION_CHOICES, WEATHER_CONDITION_CHOICES,
 )
+from .site_conflicts import find_depth_conflict, site_id_sort_key
 
 # Header set by the upload page's JS when it sends files in batches via fetch.
 UPLOAD_BATCH_HEADER = 'X-Upload-Batch'
+
+# coraldb site ids: physical site number, dot, depth/sub-area number (e.g. 13.1).
+SITE_ID_PATTERN = re.compile(r'\d+\.\d+')
 
 
 def index(request):
@@ -153,16 +158,21 @@ def profile_view(request):
             if dive_site_id:
                 dive_site = DiveSite.objects.filter(id=dive_site_id).first()
             elif new_site_name:
-                country = request.POST.get('new_site_country', '').strip() or 'Indonesia'
-                region = request.POST.get('new_site_region', '').strip()
-                lat = request.POST.get('new_site_lat', '').strip() or None
-                lon = request.POST.get('new_site_lon', '').strip() or None
-                dive_site, _ = DiveSite.objects.get_or_create(
+                new_site_id = request.POST.get('new_site_id', '').strip()
+                site_error = _new_site_error(new_site_name, new_site_id)
+                if site_error:
+                    messages.error(request, site_error)
+                    return redirect('/profile/')
+                country = request.POST.get('new_site_country', '').strip()
+                dive_site = DiveSite.objects.create(
                     name=new_site_name,
-                    defaults={
-                        'country': country, 'region': region,
-                        'latitude': lat, 'longitude': lon, 'created_by': request.user,
-                    },
+                    site_id=new_site_id,
+                    depth=depth,
+                    country=country or 'Indonesia',
+                    region=request.POST.get('new_site_region', '').strip(),
+                    latitude=request.POST.get('new_site_lat', '').strip() or None,
+                    longitude=request.POST.get('new_site_lon', '').strip() or None,
+                    created_by=request.user,
                 )
 
             if dive_site:
@@ -184,7 +194,20 @@ def profile_view(request):
         'dive_sites': dive_sites,
         'entries': entries,
         'organisation_type_choices': ORGANISATION_TYPE_CHOICES,
+        'new_site_prefill': request.GET,
     })
+
+
+def _new_site_error(name: str, site_id: str) -> str | None:
+    """Validate a user-created site; existing sites are never reused or changed."""
+    if not SITE_ID_PATTERN.fullmatch(site_id):
+        return 'Please enter a site id like 13.3 (site number, dot, sub-site number).'
+    existing = DiveSite.objects.filter(site_id=site_id).first()
+    if existing:
+        return f'Site id {site_id} is already registered as {existing.name}.'
+    if DiveSite.objects.filter(name=name).exists():
+        return f'A site named {name} already exists, please choose another name.'
+    return None
 
 
 @login_required(login_url='/login/')
@@ -234,6 +257,14 @@ def upload_view(request):
 
         if not diving_date:
             error = 'Please enter the diving date'
+        elif dive_site_id and not (dive_site and dive_site.site_id):
+            error = 'Please select a registered site id'
+        elif dive_site and (conflict := find_depth_conflict(
+            dive_site,
+            request.POST.get('depth_category', ''),
+            request.POST.get('depth_custom', '').strip(),
+        )):
+            error = conflict
         elif not images:
             error = 'Please select at least one image'
         elif session_id is None:
@@ -256,7 +287,9 @@ def upload_view(request):
             return JsonResponse({'error': error}, status=400)
 
     sessions = _get_upload_sessions(request.user)
-    dive_sites = DiveSite.objects.all().order_by('region', 'name')
+    dive_sites = sorted(
+        DiveSite.objects.filter(site_id__isnull=False), key=site_id_sort_key
+    )
     photographer_prefill = {
         'name': request.user.first_name,
         'surname': request.user.last_name,

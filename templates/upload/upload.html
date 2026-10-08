@@ -64,16 +64,23 @@
         <fieldset class="meta-group">
             <legend>Dive Site</legend>
             <div>
-                <label for="dive_site_id">Site name</label>
+                <label for="dive_site_id">Site id</label>
                 <select id="dive_site_id" name="dive_site_id">
                     <option value="">— Select a site —</option>
                     {% for site in dive_sites %}
-                    <option value="{{ site.id }}">
-                        {{ site.name }}{% if site.region %} ({{ site.region }}){% endif %}
+                    <option value="{{ site.id }}" data-site-id="{{ site.site_id }}"
+                            data-group="{{ site.site_group }}" data-name="{{ site.name }}"
+                            data-region="{{ site.region }}"
+                            data-depth="{{ site.depth|default:''|floatformat:'-2' }}">
+                        {{ site.name }}{% if site.depth is not None %} — {{ site.depth|floatformat:'-2' }} m{% endif %}{% if site.region %} ({{ site.region }}){% endif %}
                     </option>
                     {% endfor %}
                 </select>
-                <p class="hint">Don't see your site? Add it from your <a href="/profile/">profile page</a> first.</p>
+                <p class="hint">Don't see your site id? Create a new one from your <a href="/profile/">profile page</a> first.</p>
+                <div id="siteConflict" class="error site-conflict" style="display:none;">
+                    <p id="siteConflictText"></p>
+                    <div id="siteConflictActions" class="site-conflict-actions"></div>
+                </div>
             </div>
         </fieldset>
 
@@ -385,6 +392,21 @@
         grid-template-columns: 1fr 1fr;
         gap: 1rem;
     }
+    .site-conflict { margin-top: 0.6rem; }
+    .site-conflict p { margin: 0 0 0.5rem; }
+    .site-conflict-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .site-conflict-actions button,
+    .site-conflict-actions a {
+        background: white;
+        color: #c33;
+        border: 1px solid #c33;
+        padding: 0.35rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        text-decoration: none;
+        width: auto;
+    }
+
     .hint {
         color: #999;
         font-size: 0.85rem;
@@ -597,6 +619,102 @@
             select.value === 'custom' ? 'block' : 'none';
     }
 
+    // --- Site id / depth conflict check ---
+    //
+    // Each site_id covers one location at one depth, so a depth that doesn't fit
+    // the chosen site blocks the upload and suggests the sibling site_id instead.
+    // Mirrors upload/site_conflicts.py; keep both in sync.
+
+    const DEPTH_TOLERANCE_M = 1;
+    const DEPTH_CATEGORY_MATCHERS = {
+        '0_5m': depth => depth <= 5,
+        '5m': depth => depth === 5,
+        '10m': depth => depth === 10,
+        'gt_10m': depth => depth > 10,
+    };
+    const CATEGORY_DEPTHS = { '5m': '5', '10m': '10' };
+    const siteSelect = document.getElementById('dive_site_id');
+    const depthCategory = document.getElementById('depth_category');
+    const depthCustom = document.getElementById('depth_custom');
+    let hasSiteConflict = false;
+    let isUploading = false;
+
+    [siteSelect, depthCategory].forEach(el => el.addEventListener('change', checkSiteConflict));
+    depthCustom.addEventListener('input', checkSiteConflict);
+
+    function checkSiteConflict() {
+        const selected = siteSelect.selectedOptions[0];
+        hasSiteConflict = Boolean(selected && selected.value) && !depthMatches(selected);
+        document.getElementById('siteConflict').style.display =
+            hasSiteConflict ? 'block' : 'none';
+        refreshUploadButton();
+        if (hasSiteConflict) renderSiteConflict(selected);
+    }
+
+    function renderSiteConflict(selected) {
+        const siblings = siteOptions().filter(option => option !== selected
+            && option.dataset.group === selected.dataset.group && depthMatches(option));
+        document.getElementById('siteConflictText').textContent =
+            `${selected.dataset.name} is at ${selected.dataset.depth} m, which doesn't `
+            + 'match the depth you entered. '
+            + (siblings.length ? 'Did you mean:' : 'No registered site matches this depth.');
+        document.getElementById('siteConflictActions').replaceChildren(
+            ...(siblings.length ? siblings.map(suggestionButton) : [newSiteLink(selected)])
+        );
+    }
+
+    function depthMatches(option) {
+        const siteDepth = parseFloat(option.dataset.depth);
+        const category = depthCategory.value;
+        if (Number.isNaN(siteDepth) || !category) return true;
+        if (category !== 'custom') {
+            const matcher = DEPTH_CATEGORY_MATCHERS[category];
+            return !matcher || matcher(siteDepth);
+        }
+        const entered = parseFloat(depthCustom.value);
+        return Number.isNaN(entered) || Math.abs(entered - siteDepth) <= DEPTH_TOLERANCE_M;
+    }
+
+    function siteOptions() {
+        return Array.from(siteSelect.options).filter(option => option.value);
+    }
+
+    function suggestionButton(option) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = `Use ${option.dataset.name}`;
+        button.addEventListener('click', () => {
+            siteSelect.value = option.value;
+            checkSiteConflict();
+        });
+        return button;
+    }
+
+    function newSiteLink(selected) {
+        const enteredDepth = depthCategory.value === 'custom'
+            ? depthCustom.value : (CATEGORY_DEPTHS[depthCategory.value] || '');
+        const params = new URLSearchParams({
+            new_site_id: nextSiteId(selected.dataset.group),
+            new_site_region: selected.dataset.region,
+            depth: enteredDepth,
+        });
+        const link = document.createElement('a');
+        link.href = `/profile/?${params}`;
+        link.textContent = 'Create a new site id';
+        return link;
+    }
+
+    function nextSiteId(group) {
+        const subSites = siteOptions()
+            .filter(option => option.dataset.group === group)
+            .map(option => parseInt(option.dataset.siteId.split('.')[1], 10));
+        return `${group}.${Math.max(...subSites) + 1}`;
+    }
+
+    function refreshUploadButton() {
+        document.getElementById('uploadButton').disabled = isUploading || hasSiteConflict;
+    }
+
     // --- Individual file input label update ---
 
     document.getElementById('individualInput').addEventListener('change', function () {
@@ -618,6 +736,7 @@
 
     document.getElementById('uploadForm').addEventListener('submit', async function (e) {
         e.preventDefault();
+        if (hasSiteConflict) return;
         if (allFiles.length === 0) {
             alert('Please select at least one image.');
             return;
@@ -692,9 +811,10 @@
         }
     }
 
-    function setUploading(isUploading) {
-        document.getElementById('uploadButton').disabled = isUploading;
-        if (isUploading) document.getElementById('uploadError').style.display = 'none';
+    function setUploading(uploading) {
+        isUploading = uploading;
+        refreshUploadButton();
+        if (uploading) document.getElementById('uploadError').style.display = 'none';
     }
 
     function showProgress(text) {
