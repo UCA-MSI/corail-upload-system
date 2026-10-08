@@ -36,9 +36,6 @@
             <span id="individualFileName" class="file-name-display">No file chosen</span>
         </div>
 
-        <!-- Hidden input that carries all aggregated files to the server -->
-        <input type="file" id="mainFileInput" name="images" multiple style="display:none">
-
         <div id="fileList" style="display:none;">
             <div class="file-list-header">
                 <span>Selected: <strong id="fileCount">0</strong> file(s)</span>
@@ -172,7 +169,9 @@
             <label for="description">Description</label>
             <textarea id="description" name="description" rows="3" placeholder="Any additional info..."></textarea>
         </div>
-        <button type="submit">Upload Photos</button>
+        <div id="uploadError" class="error" style="display:none;"></div>
+        <p id="uploadProgress" style="display:none;"></p>
+        <button type="submit" id="uploadButton">Upload Photos</button>
     </form>
 
     {% if sessions %}
@@ -472,28 +471,25 @@
             }
         }
         if (added > 0) {
-            syncMainInput();
+            updateFileSummary();
             renderPreviews();
         }
     }
 
     function removeFile(index) {
         allFiles.splice(index, 1);
-        syncMainInput();
+        updateFileSummary();
         renderPreviews();
     }
 
     function clearFiles() {
         allFiles = [];
-        syncMainInput();
+        updateFileSummary();
         renderPreviews();
         document.getElementById('individualFileName').textContent = 'No file chosen';
     }
 
-    function syncMainInput() {
-        const dt = new DataTransfer();
-        for (const file of allFiles) dt.items.add(file);
-        document.getElementById('mainFileInput').files = dt.files;
+    function updateFileSummary() {
         document.getElementById('fileCount').textContent = allFiles.length;
         document.getElementById('fileList').style.display = allFiles.length ? 'block' : 'none';
     }
@@ -507,10 +503,8 @@
     // into view.
 
     function renderPreviews() {
+        clearPreviews();
         const container = document.getElementById('imagePreviews');
-        container.innerHTML = '';
-        previewUrls.forEach(url => URL.revokeObjectURL(url));
-        previewUrls = [];
 
         allFiles.forEach((file, index) => {
             const card = document.createElement('div');
@@ -538,6 +532,12 @@
             card.appendChild(label);
             container.appendChild(card);
         });
+    }
+
+    function clearPreviews() {
+        document.getElementById('imagePreviews').innerHTML = '';
+        previewUrls.forEach(url => URL.revokeObjectURL(url));
+        previewUrls = [];
     }
 
     // --- Drag and drop zone ---
@@ -605,14 +605,110 @@
             count ? `${count} file${count > 1 ? 's' : ''} chosen` : 'No file chosen';
     });
 
-    // --- Guard: ensure mainFileInput is populated before submit ---
+    // --- Batched upload ---
+    //
+    // A single native form POST of a whole folder crashes Safari tabs (and exceeds
+    // Django's per-request file limit and the Gunicorn timeout), so files are sent
+    // in small batches via fetch, all sharing one session id. Previews are torn
+    // down first to free their decoded bitmaps while the upload runs.
 
-    document.getElementById('uploadForm').addEventListener('submit', function (e) {
+    const MAX_BATCH_FILES = 10;
+    const MAX_BATCH_BYTES = 10 * 1024 * 1024;
+    let uploadSessionId = crypto.randomUUID();
+
+    document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+        e.preventDefault();
         if (allFiles.length === 0) {
-            e.preventDefault();
             alert('Please select at least one image.');
+            return;
         }
+        clearPreviews();
+        setUploading(true);
+        const uploaded = await uploadInBatches(this, splitIntoBatches(allFiles));
+        if (uploaded === allFiles.length) {
+            window.location.href = '/upload/';
+            return;
+        }
+        allFiles = allFiles.slice(uploaded);
+        updateFileSummary();
+        renderPreviews();
+        setUploading(false);
     });
+
+    function splitIntoBatches(files) {
+        const batches = [];
+        let batch = [];
+        let batchBytes = 0;
+        for (const file of files) {
+            const isFull = batch.length >= MAX_BATCH_FILES
+                || batchBytes + file.size > MAX_BATCH_BYTES;
+            if (batch.length && isFull) {
+                batches.push(batch);
+                batch = [];
+                batchBytes = 0;
+            }
+            batch.push(file);
+            batchBytes += file.size;
+        }
+        if (batch.length) batches.push(batch);
+        return batches;
+    }
+
+    // Returns how many files were uploaded; stops at the first failed batch.
+    async function uploadInBatches(form, batches) {
+        const total = batches.reduce((sum, batch) => sum + batch.length, 0);
+        let uploaded = 0;
+        for (const [index, batch] of batches.entries()) {
+            showProgress(`Uploading ${uploaded}/${total} photos…`);
+            const error = await uploadBatch(form, batch, index === batches.length - 1);
+            if (error) {
+                showUploadError(`Uploaded ${uploaded} of ${total} photos. ${error} `
+                    + 'Click Upload Photos to retry the remaining ones.');
+                return uploaded;
+            }
+            uploaded += batch.length;
+        }
+        showProgress(`Uploaded ${total}/${total} photos.`);
+        return uploaded;
+    }
+
+    // Returns an error message, or null on success.
+    async function uploadBatch(form, files, isFinal) {
+        const data = new FormData(form);
+        data.set('session_id', uploadSessionId);
+        if (isFinal) data.set('final', '1');
+        files.forEach(file => data.append('images', file));
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: data,
+                headers: { 'X-Upload-Batch': '1' },
+            });
+            if (response.ok) return null;
+            const body = await response.json().catch(() => ({}));
+            return body.error || `Server error (${response.status}).`;
+        } catch (err) {
+            return 'Network error, check your connection.';
+        }
+    }
+
+    function setUploading(isUploading) {
+        document.getElementById('uploadButton').disabled = isUploading;
+        if (isUploading) document.getElementById('uploadError').style.display = 'none';
+    }
+
+    function showProgress(text) {
+        const progress = document.getElementById('uploadProgress');
+        progress.textContent = text;
+        progress.style.display = 'block';
+    }
+
+    function showUploadError(text) {
+        const errorBox = document.getElementById('uploadError');
+        errorBox.textContent = text;
+        errorBox.style.display = 'block';
+        document.getElementById('uploadProgress').style.display = 'none';
+    }
 
     // --- Sessions table filtering (dropdown, exact match, per column) ---
 

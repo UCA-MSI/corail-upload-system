@@ -2,6 +2,7 @@ import io
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.http import HttpResponse
 from django.test import TestCase
 from PIL import Image
 
@@ -114,3 +115,66 @@ class UploadDivingDateValidationTests(TestCase):
         })
         image = UploadImageModel.objects.get()
         self.assertEqual(image.dive_time, "")
+
+
+class BatchedUploadTests(TestCase):
+    BATCH_HEADERS = {"HTTP_X_UPLOAD_BATCH": "1"}
+    SESSION_ID = "6f1c2b9e-3d4a-4e5f-8a7b-1c2d3e4f5a6b"
+
+    def setUp(self) -> None:
+        self.user = User.objects.create_user(username="diver", password="secret123")
+        self.client.force_login(self.user)
+
+    def _post_batch(self, **fields: str) -> HttpResponse:
+        data = {
+            "images": [_make_test_image()],
+            "diving_date": "2026-07-30",
+            "session_id": self.SESSION_ID,
+            **fields,
+        }
+        return self.client.post("/upload/", data, **self.BATCH_HEADERS)
+
+    def test_batches_share_one_session(self) -> None:
+        self._post_batch()
+        response = self._post_batch(final="1")
+        self.assertEqual(response.json(), {"uploaded": 1})
+        session_ids = set(UploadImageModel.objects.values_list("session_id", flat=True))
+        self.assertEqual({str(s) for s in session_ids}, {self.SESSION_ID})
+
+    def test_final_batch_flashes_total_count(self) -> None:
+        self._post_batch()
+        self._post_batch(final="1")
+        response = self.client.get("/upload/")
+        self.assertContains(response, "2 images uploaded successfully!")
+
+    def test_non_final_batch_does_not_flash(self) -> None:
+        self._post_batch()
+        response = self.client.get("/upload/")
+        self.assertNotContains(response, "uploaded successfully")
+
+    def test_invalid_session_id_is_rejected(self) -> None:
+        response = self._post_batch(session_id="not-a-uuid")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "Invalid upload session"})
+        self.assertEqual(UploadImageModel.objects.count(), 0)
+
+    def test_missing_diving_date_returns_json_error(self) -> None:
+        response = self._post_batch(diving_date="")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"error": "Please enter the diving date"})
+
+    def test_batch_without_images_returns_json_error(self) -> None:
+        response = self.client.post("/upload/", {
+            "diving_date": "2026-07-30", "session_id": self.SESSION_ID,
+        }, **self.BATCH_HEADERS)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json(), {"error": "Please select at least one image"}
+        )
+
+    def test_plain_post_without_session_id_still_redirects(self) -> None:
+        response = self.client.post("/upload/", {
+            "images": [_make_test_image()], "diving_date": "2026-07-30",
+        })
+        self.assertRedirects(response, "/upload/", fetch_redirect_response=False)
+        self.assertEqual(UploadImageModel.objects.count(), 1)

@@ -1,3 +1,4 @@
+from django.http import JsonResponse
 from django.shortcuts import render, redirect
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate, login, logout
@@ -14,6 +15,9 @@ from .models import (
     ORGANISATION_TYPE_CHOICES, DIVE_TIME_CHOICES, DEPTH_CHOICES,
     WATER_CONDITION_CHOICES, WEATHER_CONDITION_CHOICES,
 )
+
+# Header set by the upload page's JS when it sends files in batches via fetch.
+UPLOAD_BATCH_HEADER = 'X-Upload-Batch'
 
 
 def index(request):
@@ -225,19 +229,31 @@ def upload_view(request):
             weather_conditions=request.POST.get('weather_conditions', ''),
         )
 
+        is_batch = request.headers.get(UPLOAD_BATCH_HEADER) == '1'
+        session_id = _parse_session_id(request.POST.get('session_id', ''))
+
         if not diving_date:
             error = 'Please enter the diving date'
-        elif images:
-            session_id = uuid.uuid4()
+        elif not images:
+            error = 'Please select at least one image'
+        elif session_id is None:
+            error = 'Invalid upload session'
+        else:
             for image in images:
                 UploadImageModel.objects.create(
                     user=request.user, image=image, session_id=session_id, **common_fields
                 )
-            count = len(images)
-            messages.success(request, f'{count} image{"s" if count > 1 else ""} uploaded successfully!')
-            return redirect('/upload/')
-        else:
-            error = 'Please select at least one image'
+            if not is_batch:
+                _flash_upload_success(request, len(images))
+                return redirect('/upload/')
+            if request.POST.get('final') == '1':
+                _flash_upload_success(request, UploadImageModel.objects.filter(
+                    user=request.user, session_id=session_id
+                ).count())
+            return JsonResponse({'uploaded': len(images)})
+
+        if is_batch:
+            return JsonResponse({'error': error}, status=400)
 
     sessions = _get_upload_sessions(request.user)
     dive_sites = DiveSite.objects.all().order_by('region', 'name')
@@ -257,6 +273,24 @@ def upload_view(request):
         'water_condition_choices': WATER_CONDITION_CHOICES,
         'weather_condition_choices': WEATHER_CONDITION_CHOICES,
     })
+
+
+def _parse_session_id(raw: str) -> uuid.UUID | None:
+    """Return the client-supplied upload session id, a fresh one if blank, None if invalid.
+
+    Batched uploads send several requests that must share one session id.
+    """
+    if not raw:
+        return uuid.uuid4()
+    try:
+        return uuid.UUID(raw)
+    except ValueError:
+        return None
+
+
+def _flash_upload_success(request, count: int) -> None:
+    """Queue the upload success message shown on the next page load."""
+    messages.success(request, f'{count} image{"s" if count > 1 else ""} uploaded successfully!')
 
 
 def _depth_label(image):
