@@ -17,6 +17,7 @@ from .models import (
     WATER_CONDITION_CHOICES, WEATHER_CONDITION_CHOICES,
 )
 from .site_conflicts import find_depth_conflict, site_id_sort_key
+from .thumbnails import ThumbnailError, make_thumbnail
 
 # Header set by the upload page's JS when it sends files in batches via fetch.
 UPLOAD_BATCH_HEADER = 'X-Upload-Batch'
@@ -270,10 +271,9 @@ def upload_view(request):
         elif session_id is None:
             error = 'Invalid upload session'
         else:
-            for image in images:
-                UploadImageModel.objects.create(
-                    user=request.user, image=image, session_id=session_id, **common_fields
-                )
+            error = _save_uploads(request.user, images, session_id, common_fields)
+
+        if error is None:
             if not is_batch:
                 _flash_upload_success(request, len(images))
                 return redirect('/upload/')
@@ -306,6 +306,26 @@ def upload_view(request):
         'water_condition_choices': WATER_CONDITION_CHOICES,
         'weather_condition_choices': WEATHER_CONDITION_CHOICES,
     })
+
+
+def _save_uploads(
+    user: User, images: list, session_id: uuid.UUID, common_fields: dict
+) -> str | None:
+    """Store each image as original + thumbnail.
+
+    Thumbnails are built first, so nothing is saved if any image is unreadable;
+    the error message is returned instead.
+    """
+    try:
+        thumbnails = [make_thumbnail(image, image.name) for image in images]
+    except ThumbnailError as exc:
+        return str(exc)
+    for original, thumbnail in zip(images, thumbnails):
+        UploadImageModel.objects.create(
+            user=user, original=original, image=thumbnail,
+            session_id=session_id, **common_fields
+        )
+    return None
 
 
 def _parse_session_id(raw: str) -> uuid.UUID | None:
@@ -447,7 +467,7 @@ def delete_image_view(request, image_id):
     if request.method == 'POST':
         try:
             image = UploadImageModel.objects.get(id=image_id, user=request.user)
-            image.image.delete(save=False)
+            image.delete_files()
             image.delete()
         except UploadImageModel.DoesNotExist:
             pass

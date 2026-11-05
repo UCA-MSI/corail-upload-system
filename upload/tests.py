@@ -1,14 +1,19 @@
 import io
+import tempfile
+from pathlib import Path
 
 from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth.models import User
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.http import HttpResponse
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from PIL import Image
 
 from .models import DiveSite, UploadImageModel, UserDiveSite
 from .site_conflicts import find_depth_conflict
+from .thumbnails import ThumbnailError, make_thumbnail
 
 
 def _make_test_image() -> SimpleUploadedFile:
@@ -350,3 +355,156 @@ class ProfileNewSiteIdTests(TestCase):
         response = self.client.get("/profile/?new_site_id=13.3&depth=18")
         self.assertContains(response, 'value="13.3"')
         self.assertContains(response, 'value="18"')
+
+
+EXIF_ORIENTATION = 0x0112
+EXIF_MAKE = 0x010F
+
+
+def _make_photo(
+    size: tuple[int, int] = (1200, 800),
+    fmt: str = "JPEG",
+    mode: str = "RGB",
+    name: str = "dive.jpg",
+    exif: dict[int, object] | None = None,
+) -> SimpleUploadedFile:
+    """A photo of the given size and format, optionally with EXIF tags."""
+    buffer = io.BytesIO()
+    image_exif = Image.Exif()
+    image_exif.update(exif or {})
+    Image.new(mode, size, "blue").save(buffer, format=fmt, exif=image_exif)
+    return SimpleUploadedFile(name, buffer.getvalue())
+
+
+def _open(file) -> Image.Image:
+    """Open a stored or generated image file with Pillow."""
+    file.open("rb")
+    return Image.open(io.BytesIO(file.read()))
+
+
+class TempMediaTestCase(TestCase):
+    """Store uploaded files in a throwaway MEDIA_ROOT."""
+
+    def setUp(self) -> None:
+        media_root = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(override_settings(MEDIA_ROOT=media_root))
+        self.media_root = Path(media_root)
+        self.user = User.objects.create_user(username="diver", password="secret123")
+        self.client.force_login(self.user)
+
+
+class MakeThumbnailTests(SimpleTestCase):
+    def test_thumbnail_fits_within_400px(self) -> None:
+        thumbnail = make_thumbnail(_make_photo((1200, 800)), "dive.jpg")
+        self.assertEqual(_open(thumbnail).size, (400, 267))
+
+    def test_small_image_is_not_upscaled(self) -> None:
+        thumbnail = make_thumbnail(_make_photo((100, 50)), "dive.jpg")
+        self.assertEqual(_open(thumbnail).size, (100, 50))
+
+    def test_exif_orientation_is_applied(self) -> None:
+        photo = _make_photo((600, 300), exif={EXIF_ORIENTATION: 6})
+        self.assertEqual(_open(make_thumbnail(photo, "dive.jpg")).size, (200, 400))
+
+    def test_exif_metadata_is_stripped(self) -> None:
+        photo = _make_photo(exif={EXIF_MAKE: "TestCam", EXIF_ORIENTATION: 1})
+        self.assertEqual(dict(_open(make_thumbnail(photo, "dive.jpg")).getexif()), {})
+
+    def test_png_with_alpha_becomes_jpeg(self) -> None:
+        photo = _make_photo(fmt="PNG", mode="RGBA", name="dive.png")
+        thumbnail = make_thumbnail(photo, "dive.png")
+        self.assertEqual(thumbnail.name, "dive.jpg")
+        self.assertEqual(_open(thumbnail).format, "JPEG")
+
+    def test_heic_is_supported(self) -> None:
+        photo = _make_photo(fmt="HEIF", name="dive.heic")
+        self.assertEqual(_open(make_thumbnail(photo, "dive.heic")).size, (400, 267))
+
+    def test_unreadable_file_raises_with_file_name(self) -> None:
+        raw = SimpleUploadedFile("IMG_001.CR2", b"not an image")
+        with self.assertRaisesMessage(ThumbnailError, "Could not read IMG_001.CR2"):
+            make_thumbnail(raw, "folder/IMG_001.CR2")
+
+    def test_file_position_is_reset_for_saving_the_original(self) -> None:
+        photo = _make_photo()
+        make_thumbnail(photo, "dive.jpg")
+        self.assertEqual(photo.tell(), 0)
+
+
+class UploadThumbnailTests(TempMediaTestCase):
+    SESSION_ID = "6f1c2b9e-3d4a-4e5f-8a7b-1c2d3e4f5a6b"
+
+    def _post(self, *images: SimpleUploadedFile) -> HttpResponse:
+        return self.client.post("/upload/", {
+            "images": list(images),
+            "diving_date": "2026-07-30",
+            "session_id": self.SESSION_ID,
+        }, HTTP_X_UPLOAD_BATCH="1")
+
+    def test_upload_stores_original_and_thumbnail(self) -> None:
+        photo = _make_photo()
+        original_bytes = photo.read()
+        photo.seek(0)
+        self._post(photo)
+        upload = UploadImageModel.objects.get()
+        original_dir = f"originals/{self.SESSION_ID}/"
+        self.assertTrue(upload.original.name.startswith(original_dir))
+        upload.original.open("rb")
+        self.assertEqual(upload.original.read(), original_bytes)
+        self.assertTrue(upload.image.name.startswith("thumbnails/"))
+        self.assertEqual(_open(upload.image).size, (400, 267))
+
+    def test_unreadable_file_rejects_the_whole_batch(self) -> None:
+        response = self._post(_make_photo(), SimpleUploadedFile("bad.jpg", b"junk"))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Could not read bad.jpg", response.json()["error"])
+        self.assertEqual(UploadImageModel.objects.count(), 0)
+        self.assertEqual(list(self.media_root.rglob("*.*")), [])
+
+    def test_delete_removes_original_and_thumbnail(self) -> None:
+        self._post(_make_photo())
+        upload = UploadImageModel.objects.get()
+        files = [Path(upload.image.path), Path(upload.original.path)]
+        self.client.post(f"/upload/delete/{upload.id}/")
+        self.assertEqual(UploadImageModel.objects.count(), 0)
+        self.assertFalse(any(path.exists() for path in files))
+
+
+class BackfillThumbnailsTests(TempMediaTestCase):
+    def _legacy_upload(self, name: str, content: bytes | None) -> UploadImageModel:
+        """An upload made before thumbnails existed: `image` holds the original."""
+        if content is not None:
+            default_storage.save(name, io.BytesIO(content))
+        return UploadImageModel.objects.create(
+            user=self.user, image=name, diving_date="2026-07-30"
+        )
+
+    def _run(self) -> tuple[str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        call_command("backfill_thumbnails", stdout=out, stderr=err)
+        return out.getvalue(), err.getvalue()
+
+    def test_current_file_becomes_original_and_image_a_thumbnail(self) -> None:
+        upload = self._legacy_upload("images/old.jpg", _make_photo().read())
+        out, _ = self._run()
+        upload.refresh_from_db()
+        self.assertEqual(upload.original.name, "images/old.jpg")
+        self.assertTrue(upload.image.name.startswith("thumbnails/"))
+        self.assertEqual(_open(upload.image).size, (400, 267))
+        self.assertIn("1 backfilled, 0 failed", out)
+
+    def test_second_run_does_nothing(self) -> None:
+        self._legacy_upload("images/old.jpg", _make_photo().read())
+        self._run()
+        out, _ = self._run()
+        self.assertIn("0 backfilled, 0 failed", out)
+
+    def test_missing_or_unreadable_files_are_reported_and_skipped(self) -> None:
+        missing = self._legacy_upload("images/missing.jpg", None)
+        self._legacy_upload("images/bad.jpg", b"junk")
+        self._legacy_upload("images/old.jpg", _make_photo().read())
+        out, err = self._run()
+        self.assertIn("1 backfilled, 2 failed", out)
+        self.assertIn(f"Upload {missing.id} (images/missing.jpg)", err)
+        missing.refresh_from_db()
+        self.assertEqual(missing.original.name, "")

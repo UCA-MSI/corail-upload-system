@@ -78,9 +78,17 @@ class DiveSite(models.Model):
         return self.site_id.split('.')[0] if self.site_id else ''
 
 
+def original_upload_path(instance: 'UploadImageModel', filename: str) -> str:
+    """Group full-resolution originals by upload session."""
+    return f'originals/{instance.session_id}/{filename}'
+
+
 class UploadImageModel(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='uploaded_images')
-    image = models.ImageField(upload_to='images/')
+    # Thumbnail shown on the site; the full-resolution file is kept in `original`.
+    image = models.ImageField(upload_to='thumbnails/')
+    # Empty once the original has been pulled off the web host (or never stored).
+    original = models.FileField(upload_to=original_upload_path, blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     session_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
     diving_date = models.DateField()
@@ -103,6 +111,11 @@ class UploadImageModel(models.Model):
 
     def __str__(self) -> str:
         return f"Image {self.id} uploaded at {self.uploaded_at}"
+
+    def delete_files(self) -> None:
+        """Remove the thumbnail and the original from storage."""
+        self.image.delete(save=False)
+        self.original.delete(save=False)
 
 
 class UserProfile(models.Model):
