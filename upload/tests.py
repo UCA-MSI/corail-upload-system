@@ -6,7 +6,7 @@ from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth.models import User
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.http import HttpResponse
 from django.test import SimpleTestCase, TestCase, override_settings
 from PIL import Image
@@ -508,3 +508,49 @@ class BackfillThumbnailsTests(TempMediaTestCase):
         self.assertIn(f"Upload {missing.id} (images/missing.jpg)", err)
         missing.refresh_from_db()
         self.assertEqual(missing.original.name, "")
+
+
+class DeleteUserUploadsTests(TempMediaTestCase):
+    def _upload(self, user: User, name: str) -> UploadImageModel:
+        """An upload whose thumbnail and original both exist on disk."""
+        image = default_storage.save(f"thumbnails/{name}", io.BytesIO(b"thumb"))
+        original = default_storage.save(f"originals/{name}", io.BytesIO(b"full"))
+        return UploadImageModel.objects.create(
+            user=user, image=image, original=original, diving_date="2026-07-30"
+        )
+
+    def _run(self, *args: str) -> str:
+        out = io.StringIO()
+        call_command("delete_user_uploads", *args, stdout=out)
+        return out.getvalue()
+
+    def test_deletes_only_that_users_uploads_and_files(self) -> None:
+        other = User.objects.create_user(username="other", password="secret123")
+        mine = [self._upload(self.user, "a.jpg"), self._upload(self.user, "b.jpg")]
+        theirs = self._upload(other, "c.jpg")
+        out = self._run("diver")
+        self.assertIn("Deleted 2 uploads of diver", out)
+        self.assertEqual(list(UploadImageModel.objects.all()), [theirs])
+        for upload in mine:
+            self.assertFalse(default_storage.exists(upload.image.name))
+            self.assertFalse(default_storage.exists(upload.original.name))
+        self.assertTrue(default_storage.exists(theirs.image.name))
+        self.assertTrue(default_storage.exists(theirs.original.name))
+
+    def test_dry_run_deletes_nothing(self) -> None:
+        upload = self._upload(self.user, "a.jpg")
+        out = self._run("diver", "--dry-run")
+        self.assertIn("Would delete 1 uploads of diver", out)
+        self.assertTrue(UploadImageModel.objects.filter(pk=upload.pk).exists())
+        self.assertTrue(default_storage.exists(upload.image.name))
+
+    def test_missing_or_empty_files_do_not_block_deletion(self) -> None:
+        UploadImageModel.objects.create(
+            user=self.user, image="thumbnails/gone.jpg", diving_date="2026-07-30"
+        )
+        self.assertIn("Deleted 1 uploads of diver", self._run("diver"))
+        self.assertFalse(UploadImageModel.objects.exists())
+
+    def test_unknown_user_is_an_error(self) -> None:
+        with self.assertRaisesMessage(CommandError, "No user named 'nobody'"):
+            self._run("nobody")
