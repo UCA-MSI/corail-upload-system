@@ -1,5 +1,8 @@
+import hashlib
 import io
+import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 from django.contrib.admin.sites import site as admin_site
@@ -8,8 +11,12 @@ from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError, call_command
 from django.http import HttpResponse
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import (
+    SimpleTestCase, TestCase, TransactionTestCase, override_settings,
+)
 from PIL import Image
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
 from .models import DiveSite, UploadImageModel, UserDiveSite
 from .site_conflicts import find_depth_conflict
@@ -606,3 +613,108 @@ class ThumbnailServingTests(TempMediaTestCase):
         response = self.client.get(f"/upload/session/{self.upload.session_id}/")
         self.assertContains(response, f'src="/upload/thumbnail/{self.upload.id}/"')
         self.assertNotContains(response, "/media/")
+
+
+class BackupApiTests(TempMediaTestCase):
+    """The pull API used to copy the DB and originals to Azzurra."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        staff = User.objects.create_user(
+            username="service", password="secret123", is_staff=True
+        )
+        self.api = APIClient()
+        token = Token.objects.create(user=staff)
+        self.api.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+
+    def _upload(self, original: bytes | None = b"full-res") -> UploadImageModel:
+        """An upload with an original on disk (missing if None, absent if b'')."""
+        name = ""
+        if original:
+            name = default_storage.save("originals/s/dive.jpg", io.BytesIO(original))
+        elif original is None:
+            name = "originals/s/missing.jpg"
+        return UploadImageModel.objects.create(
+            user=self.user, image="thumbnails/t.jpg", original=name,
+            diving_date="2026-07-30", depth_category="10m",
+        )
+
+    def test_requires_a_staff_token(self) -> None:
+        anonymous = APIClient()
+        self.assertEqual(anonymous.get("/api/backup/status/").status_code, 401)
+        uploader = APIClient()
+        token = Token.objects.create(user=self.user)
+        uploader.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        self.assertEqual(uploader.get("/api/backup/db/").status_code, 403)
+
+    def test_manifest_lists_only_pending_originals_with_metadata(self) -> None:
+        pending = self._upload()
+        self._upload(original=b"")
+        missing = self._upload(original=None)
+        entries = self.api.get("/api/backup/originals/").json()
+        self.assertEqual([e["id"] for e in entries], [pending.id, missing.id])
+        self.assertEqual(entries[0]["size"], len(b"full-res"))
+        self.assertEqual(entries[0]["filename"], "dive.jpg")
+        self.assertEqual(entries[0]["depth_category"], "10m")
+        self.assertIsNone(entries[1]["size"])
+
+    def test_download_returns_the_original(self) -> None:
+        upload = self._upload()
+        response = self.api.get(f"/api/backup/originals/{upload.id}/")
+        self.assertEqual(b"".join(response.streaming_content), b"full-res")
+
+    def test_download_of_missing_or_pulled_original_is_404(self) -> None:
+        for upload in (self._upload(original=None), self._upload(original=b"")):
+            response = self.api.get(f"/api/backup/originals/{upload.id}/")
+            self.assertEqual(response.status_code, 404)
+
+    def _ack(self, upload: UploadImageModel, sha256: str) -> HttpResponse:
+        url = f"/api/backup/originals/{upload.id}/ack/"
+        return self.api.post(url, {"sha256": sha256}, format="json")
+
+    def test_ack_with_matching_sha_deletes_the_original(self) -> None:
+        upload = self._upload()
+        path = Path(upload.original.path)
+        response = self._ack(upload, hashlib.sha256(b"full-res").hexdigest())
+        self.assertEqual(response.json(), {"deleted": upload.id})
+        upload.refresh_from_db()
+        self.assertEqual(upload.original.name, "")
+        self.assertFalse(path.exists())
+        self.assertEqual(self._ack(upload, "anything").status_code, 404)
+
+    def test_ack_with_wrong_or_no_sha_keeps_the_original(self) -> None:
+        upload = self._upload()
+        self.assertEqual(self._ack(upload, "0" * 64).status_code, 409)
+        self.assertEqual(self._ack(upload, "").status_code, 400)
+        upload.refresh_from_db()
+        self.assertTrue(default_storage.exists(upload.original.name))
+
+    def test_status_reports_the_backlog(self) -> None:
+        self.assertEqual(
+            self.api.get("/api/backup/status/").json(),
+            {"pending": 0, "oldest_uploaded_at": None},
+        )
+        first = self._upload()
+        self._upload()
+        body = self.api.get("/api/backup/status/").json()
+        self.assertEqual(body["pending"], 2)
+        oldest = body["oldest_uploaded_at"][:19]
+        self.assertEqual(oldest, first.uploaded_at.isoformat()[:19])
+
+
+class BackupDbSnapshotTests(TransactionTestCase):
+    """Outside TestCase's open transaction, which SQLite's backup would wait on."""
+
+    def test_snapshot_is_a_sqlite_copy_of_the_live_db(self) -> None:
+        staff = User.objects.create_user(username="service", is_staff=True)
+        api = APIClient()
+        token = Token.objects.create(user=staff)
+        api.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        response = api.get("/api/backup/db/")
+        self.assertIn("attachment", response["Content-Disposition"])
+        with tempfile.NamedTemporaryFile(suffix=".sqlite3") as copy:
+            copy.write(b"".join(response.streaming_content))
+            copy.flush()
+            with closing(sqlite3.connect(copy.name)) as db:
+                rows = db.execute("SELECT username FROM auth_user").fetchall()
+        self.assertEqual(rows, [("service",)])

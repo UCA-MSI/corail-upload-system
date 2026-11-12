@@ -1,7 +1,26 @@
 from django.urls import path
-from . import web_views
+from . import api_views, web_views
+
+BACKUP_API = 'api/backup/'
 
 urlpatterns = [
+    path(f'{BACKUP_API}db/', api_views.db_snapshot_view, name='backup_db'),
+    path(f'{BACKUP_API}status/', api_views.backlog_status_view, name='backup_status'),
+    path(
+        f'{BACKUP_API}originals/',
+        api_views.originals_manifest_view,
+        name='backup_originals',
+    ),
+    path(
+        f'{BACKUP_API}originals/<int:upload_id>/',
+        api_views.original_download_view,
+        name='backup_original',
+    ),
+    path(
+        f'{BACKUP_API}originals/<int:upload_id>/ack/',
+        api_views.original_ack_view,
+        name='backup_original_ack',
+    ),
     path('', web_views.index, name='index'),
     path('login/', web_views.login_view, name='login'),
     path('register/', web_views.register_view, name='register'),
