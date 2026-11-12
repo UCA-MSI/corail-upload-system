@@ -1,5 +1,5 @@
-from django.http import JsonResponse
-from django.shortcuts import render, redirect
+from django.http import FileResponse, Http404, HttpRequest, JsonResponse
+from django.shortcuts import get_object_or_404, render, redirect
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -24,6 +24,9 @@ UPLOAD_BATCH_HEADER = 'X-Upload-Batch'
 
 # coraldb site ids: physical site number, dot, depth/sub-area number (e.g. 13.1).
 SITE_ID_PATTERN = re.compile(r'\d+\.\d+')
+
+# Thumbnails are per user: browsers may cache them, shared proxies must not.
+THUMBNAIL_CACHE_CONTROL = 'private, max-age=86400'
 
 
 def index(request):
@@ -460,6 +463,21 @@ def _update_session_date_and_site(request, session_id):
         diving_date=diving_date, dive_site=dive_site
     )
     messages.success(request, 'Date and site updated for all pictures in this session.')
+
+
+@login_required(login_url='/login/')
+def thumbnail_view(request: HttpRequest, image_id: int) -> FileResponse:
+    """Serve a thumbnail to its uploader or to staff; anyone else gets a 404."""
+    images = UploadImageModel.objects.all()
+    if not request.user.is_staff:
+        images = images.filter(user=request.user)
+    image = get_object_or_404(images, id=image_id)
+    try:
+        response = FileResponse(image.image.open('rb'))
+    except FileNotFoundError:
+        raise Http404('Thumbnail file is missing.')
+    response['Cache-Control'] = THUMBNAIL_CACHE_CONTROL
+    return response
 
 
 @login_required(login_url='/login/')

@@ -41,7 +41,7 @@
     <div class="picture-list">
         {% for img in images %}
         <div class="picture-row">
-            <img src="{{ img.image.url }}" alt="{{ img.description|default:'' }}" class="picture-thumb">
+            <img src="{% url 'thumbnail' img.id %}" alt="{{ img.description|default:'' }}" class="picture-thumb">
             <div class="picture-summary">
                 <div><strong>{{ img.diving_date|default:"—" }}</strong>{% if img.dive_time %} &middot; {{ img.get_dive_time_display }}{% endif %}</div>
                 <div class="hint">{{ img.dive_site.name|default:"No site set" }}</div>

@@ -554,3 +554,55 @@ class DeleteUserUploadsTests(TempMediaTestCase):
     def test_unknown_user_is_an_error(self) -> None:
         with self.assertRaisesMessage(CommandError, "No user named 'nobody'"):
             self._run("nobody")
+
+
+class ThumbnailServingTests(TempMediaTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.upload = self._upload(self.user, b"thumb-bytes")
+
+    def _upload(self, user: User, content: bytes | None) -> UploadImageModel:
+        """An upload whose thumbnail holds `content`, or is missing if None."""
+        if content is None:
+            name = "thumbnails/missing.jpg"
+        else:
+            name = default_storage.save("thumbnails/dive.jpg", io.BytesIO(content))
+        return UploadImageModel.objects.create(
+            user=user, image=name, diving_date="2026-07-30"
+        )
+
+    def _get(self, upload: UploadImageModel) -> HttpResponse:
+        return self.client.get(f"/upload/thumbnail/{upload.id}/")
+
+    def test_owner_gets_the_thumbnail_privately_cached(self) -> None:
+        response = self._get(self.upload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), b"thumb-bytes")
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        self.assertIn("private", response["Cache-Control"])
+
+    def test_other_users_get_404(self) -> None:
+        other = User.objects.create_user(username="other", password="secret123")
+        self.client.force_login(other)
+        self.assertEqual(self._get(self.upload).status_code, 404)
+
+    def test_staff_can_see_every_thumbnail(self) -> None:
+        admin = User.objects.create_user(
+            username="admin", password="secret123", is_staff=True
+        )
+        self.client.force_login(admin)
+        self.assertEqual(self._get(self.upload).status_code, 200)
+
+    def test_anonymous_is_sent_to_login(self) -> None:
+        self.client.logout()
+        response = self._get(self.upload)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/login/"))
+
+    def test_missing_file_is_404(self) -> None:
+        self.assertEqual(self._get(self._upload(self.user, None)).status_code, 404)
+
+    def test_session_page_links_the_protected_url(self) -> None:
+        response = self.client.get(f"/upload/session/{self.upload.session_id}/")
+        self.assertContains(response, f'src="/upload/thumbnail/{self.upload.id}/"')
+        self.assertNotContains(response, "/media/")
