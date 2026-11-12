@@ -614,6 +614,12 @@ class ThumbnailServingTests(TempMediaTestCase):
         self.assertContains(response, f'src="/upload/thumbnail/{self.upload.id}/"')
         self.assertNotContains(response, "/media/")
 
+    def test_session_page_asks_before_deleting_a_picture(self) -> None:
+        response = self.client.get(f"/upload/session/{self.upload.session_id}/")
+        self.assertContains(
+            response, "return confirm('Delete this picture? This cannot be undone.');"
+        )
+
 
 class BackupApiTests(TempMediaTestCase):
     """The pull API used to copy the DB and originals to Azzurra."""

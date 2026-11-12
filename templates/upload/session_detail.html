@@ -159,7 +159,8 @@
 
                     <button type="submit">Save Picture</button>
                 </form>
-                <form method="post" action="/upload/delete/{{ img.id }}/" class="delete-picture-form">
+                <form method="post" action="/upload/delete/{{ img.id }}/" class="delete-picture-form"
+                      onsubmit="return confirm('Delete this picture? This cannot be undone.');">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{% url 'session_detail' session_id %}">
                     <button type="submit" class="btn-danger-small">Delete this picture</button>
